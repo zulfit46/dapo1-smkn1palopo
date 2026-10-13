@@ -1217,9 +1217,10 @@ export const GTKKGBView: React.FC<GTKKGBViewProps> = ({
                 <input
                   type="number"
                   min={0}
-                  step={1000}
+                  step="1"
                   required
-                  value={formData.gajiPokok}
+                  placeholder="Contoh: 3721100"
+                  value={formData.gajiPokok || ''}
                   onChange={(e) => setFormData({ ...formData, gajiPokok: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 bg-white rounded-lg border border-slate-300 font-mono font-bold text-teal-700 focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 />
