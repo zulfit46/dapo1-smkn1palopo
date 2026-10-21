@@ -21,7 +21,9 @@ import {
   Users,
   Settings,
   AlertTriangle,
-  Lock
+  Lock,
+  Power,
+  PowerOff
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -105,6 +107,12 @@ export const PIPView: React.FC<PIPViewProps> = ({
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Status Aktif/Nonaktif Usulan PIP
+  const [isPipAktif, setIsPipAktif] = useState<boolean>(() => {
+    const saved = safeGetItem<boolean>('dapodik_pip_aktif', true);
+    return saved;
+  });
+
   // Kuota Usulan PIP State
   const [kuota, setKuota] = useState<number>(() => safeGetItem<number>('dapodik_pip_kuota', 50));
   const [isEditingKuota, setIsEditingKuota] = useState<boolean>(false);
@@ -118,7 +126,7 @@ export const PIPView: React.FC<PIPViewProps> = ({
   const [tempTargetSasaran, setTempTargetSasaran] = useState<string[]>(['10', '11', '12']);
   const [filterOnlyTarget, setFilterOnlyTarget] = useState<boolean>(true);
 
-  // Ambil kuota dan target sasaran dari server saat komponen dimuat
+  // Ambil kuota, target sasaran, dan status aktif dari server saat komponen dimuat
   useEffect(() => {
     fetch('/api/pip/kuota')
       .then(res => res.json())
@@ -131,9 +139,36 @@ export const PIPView: React.FC<PIPViewProps> = ({
           setTargetSasaran(data.targetSasaran);
           safeSetItem('dapodik_pip_target_sasaran', data.targetSasaran);
         }
+        if (data && typeof data.aktif === 'boolean') {
+          setIsPipAktif(data.aktif);
+          safeSetItem('dapodik_pip_aktif', data.aktif);
+        }
       })
       .catch(() => {});
   }, []);
+
+  // Toggle status aktif/nonaktif usulan PIP
+  const handleTogglePipAktif = async () => {
+    const newStatus = !isPipAktif;
+    setIsPipAktif(newStatus);
+    safeSetItem('dapodik_pip_aktif', newStatus);
+    
+    if (newStatus) {
+      showToast('Usulan PIP telah diaktifkan.');
+    } else {
+      showToast('Usulan PIP telah dinonaktifkan.');
+    }
+
+    try {
+      await fetch('/api/pip/kuota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aktif: newStatus })
+      });
+    } catch (err) {
+      console.warn('Gagal menyimpan status ke server:', err);
+    }
+  };
 
   // Hitung jumlah usulan yang sudah terisi
   const totalTerusul = useMemo(() => {
@@ -277,6 +312,12 @@ export const PIPView: React.FC<PIPViewProps> = ({
 
   // Buka modal saat tombol di kolom alasan layak diklik
   const handleOpenReasonModal = (item: PIPData) => {
+    // Cek apakah usulan PIP aktif
+    if (!isPipAktif) {
+      showToast('⚠️ Usulan PIP saat ini sedang DINONAKTIFKAN. Silakan hubungi admin untuk mengaktifkan kembali.');
+      return;
+    }
+
     const currentAlasan = (item.alasan_layak || item.alasanLayak || '').trim();
     const isAlreadyProposed = Boolean(currentAlasan);
     const studentTingkat = getTingkatKelas(getRombel(item));
@@ -598,8 +639,12 @@ export const PIPView: React.FC<PIPViewProps> = ({
     <div className="space-y-4">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 bg-slate-900 text-white rounded-xl shadow-xl text-xs font-medium animate-in fade-in slide-in-from-top-2 duration-200">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-xl text-xs font-medium animate-in fade-in slide-in-from-top-2 duration-200 ${
+          toastMessage.includes('DINONAKTIFKAN') 
+            ? 'bg-rose-600 text-white' 
+            : 'bg-slate-900 text-white'
+        }`}>
+          <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -691,39 +736,74 @@ export const PIPView: React.FC<PIPViewProps> = ({
         </div>
       </div>
 
-      {/* Kuota & Target Sasaran Usulan PIP Bar - Simplified */}
-      <div className="bg-white border border-slate-200 shadow-xs rounded-2xl p-4 lg:p-5">
+      {/* Status Usulan PIP Bar */}
+      <div className={`border rounded-2xl p-4 lg:p-5 transition-all ${
+        isPipAktif 
+          ? 'bg-white border-slate-200 shadow-xs' 
+          : 'bg-rose-50/70 border-rose-200'
+      }`}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl">
-              <Users className="w-5 h-5" />
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-xl ${
+              isPipAktif 
+                ? 'bg-emerald-50 text-emerald-700' 
+                : 'bg-rose-100 text-rose-700'
+            }`}>
+              {isPipAktif ? <Power className="w-5 h-5" /> : <PowerOff className="w-5 h-5" />}
             </div>
             <div>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Status Kuota Usulan PIP
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Status Usulan PIP
+                </span>
+                {isPipAktif ? (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                    AKTIF
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-600 text-white animate-pulse">
+                    DINONAKTIFKAN
+                  </span>
+                )}
+              </div>
+              {!isPipAktif && (
+                <p className="text-xs text-rose-700 mt-1">
+                  Usulan PIP sedang ditutup.
+                </p>
+              )}
             </div>
           </div>
 
           {isAdmin && (
             <button
-              onClick={() => {
-                setTempKuota(String(kuota));
-                setTempTargetSasaran([...targetSasaran]);
-                setIsEditingKuota(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 hover:border-indigo-400 bg-white hover:bg-slate-50 text-slate-700 hover:text-indigo-600 rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer shrink-0"
-              title="Atur kuota dan target sasaran tingkat kelas"
+              onClick={handleTogglePipAktif}
+              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer shrink-0 ${
+                isPipAktif
+                  ? 'border-rose-300 hover:border-rose-400 bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800'
+                  : 'border-emerald-300 hover:border-emerald-400 bg-white hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800'
+              }`}
+              title={isPipAktif ? 'Nonaktifkan usulan PIP' : 'Aktifkan usulan PIP'}
             >
-              <Settings className="w-3.5 h-3.5" />
-              <span>Atur Kuota & Sasaran</span>
+              {isPipAktif ? (
+                <>
+                  <PowerOff className="w-3.5 h-3.5" />
+                  <span>Nonaktifkan</span>
+                </>
+              ) : (
+                <>
+                  <Power className="w-3.5 h-3.5" />
+                  <span>Aktifkan</span>
+                </>
+              )}
             </button>
           )}
         </div>
       </div>
 
       {/* Clean Grid Table */}
-      <div className="bg-white border border-slate-300 rounded-xl shadow-2xs overflow-hidden w-full">
+      <div className={`bg-white border rounded-xl shadow-2xs overflow-hidden w-full ${
+        !isPipAktif ? 'border-rose-200' : 'border-slate-300'
+      }`}>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
@@ -803,7 +883,9 @@ export const PIPView: React.FC<PIPViewProps> = ({
                   return (
                     <tr 
                       key={item.nisn ? `pip-${item.nisn}-${idx}` : `pip-row-${idx}`}
-                      className="hover:bg-indigo-50/40 transition-colors border-b border-slate-200 group"
+                      className={`hover:bg-indigo-50/40 transition-colors border-b border-slate-200 group ${
+                        !isPipAktif ? 'opacity-75' : ''
+                      }`}
                     >
                       <td className="py-2.5 px-3 text-center border-r border-slate-200 text-slate-600 font-medium">{itemIndex}</td>
                       <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-700">{item.nisn || '-'}</td>
@@ -816,15 +898,22 @@ export const PIPView: React.FC<PIPViewProps> = ({
                       <td className="py-2.5 px-4 text-slate-800">
                         <button
                           onClick={() => handleOpenReasonModal(item)}
-                          className="w-full text-left flex items-center justify-between gap-2 p-1.5 -mx-1.5 rounded-lg hover:bg-indigo-50/60 transition-colors group/btn border border-transparent hover:border-indigo-200"
-                          title="Klik untuk memilih atau mengubah alasan layak PIP"
+                          disabled={!isPipAktif}
+                          className={`w-full text-left flex items-center justify-between gap-2 p-1.5 -mx-1.5 rounded-lg transition-colors group/btn border border-transparent ${
+                            isPipAktif
+                              ? 'hover:bg-indigo-50/60 hover:border-indigo-200 cursor-pointer'
+                              : 'cursor-not-allowed opacity-60'
+                          }`}
+                          title={!isPipAktif ? 'Usulan PIP sedang dinonaktifkan' : 'Klik untuk memilih atau mengubah alasan layak PIP'}
                         >
                           <span className={`flex-1 truncate text-xs ${reason ? 'text-slate-800 font-medium' : 'text-slate-400 italic'}`}>
-                            {reason || 'Klik untuk pilih alasan'}
+                            {reason || (isPipAktif ? 'Klik untuk pilih alasan' : 'Usulan ditutup')}
                           </span>
-                          <span className="text-[10px] text-indigo-600 font-semibold opacity-0 group-hover/btn:opacity-100 transition-opacity shrink-0">
-                            {reason ? 'Ubah' : 'Pilih'} &rarr;
-                          </span>
+                          {isPipAktif && (
+                            <span className="text-[10px] text-indigo-600 font-semibold opacity-0 group-hover/btn:opacity-100 transition-opacity shrink-0">
+                              {reason ? 'Ubah' : 'Pilih'} &rarr;
+                            </span>
+                          )}
                         </button>
                       </td>
                     </tr>
