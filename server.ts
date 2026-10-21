@@ -8,7 +8,8 @@ import { INITIAL_JURUSAN_LIST } from "./src/data/initialJurusan.js";
 import { INITIAL_GTK_LIST } from "./src/data/initialGTK.js";
 import { INITIAL_RIWAYAT_PANGKAT, INITIAL_RIWAYAT_KGB } from "./src/data/initialPangkatKGB.js";
 import { INITIAL_PEMBELAJARAN_LIST } from "./src/data/initialPembelajaran.js";
-import { Student, AttendanceRecord, AppConfig, WaliKelas, Jurusan, GTKData, RiwayatPangkat, RiwayatKGB, PembelajaranData, normalizeStudent } from "./src/types.js";
+import { INITIAL_GAJI_LIST } from "./src/data/initialGaji.js";
+import { Student, AttendanceRecord, AppConfig, WaliKelas, Jurusan, GTKData, RiwayatPangkat, RiwayatKGB, PembelajaranData, GajiData, normalizeStudent } from "./src/types.js";
 
 // In-memory data storage
 let studentList: Student[] = INITIAL_STUDENTS.map(normalizeStudent);
@@ -20,6 +21,7 @@ let cachedJurusanList: Jurusan[] = [...INITIAL_JURUSAN_LIST];
 let cachedGTKList: GTKData[] = [...INITIAL_GTK_LIST];
 let cachedPangkatList: RiwayatPangkat[] = [...INITIAL_RIWAYAT_PANGKAT];
 let cachedKGBList: RiwayatKGB[] = [...INITIAL_RIWAYAT_KGB];
+let cachedGajiList: GajiData[] = [...INITIAL_GAJI_LIST];
 let cachedPembelajaranList: PembelajaranData[] = [];
 let isPembelajaranLoadedFromSheets = false;
 
@@ -1958,6 +1960,384 @@ async function startServer() {
       }
     }
     res.json({ status: "success", message: "Sinkronisasi riwayat KGB selesai", total: cachedKGBList.length });
+  });
+
+  // Helper to fetch Data Gaji from Google Sheets (sheet: gaji)
+  let fetchGajiPromise: Promise<GajiData[]> | null = null;
+  async function fetchGajiFromGoogleSheets(): Promise<GajiData[]> {
+    if (fetchGajiPromise) {
+      return fetchGajiPromise;
+    }
+
+    fetchGajiPromise = (async () => {
+      const activeUrl = appConfig.webAppUrl || 'https://script.google.com/macros/s/AKfycbxwfqpqePmp5mtpzeJSTHpiz0PxyqSbOA3hWw1Zy8Iofvi1lMIWxYeMllDNlmP-8RI/exec';
+      try {
+        const url = `${activeUrl}${activeUrl.includes('?') ? '&' : '?'}sheet=gaji&target=gaji&_t=${Date.now()}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+        if (res.ok) {
+          const json = await res.json();
+          const isTargetGaji = json && (json.target === 'gaji' || json.target === 'datagaji' || json.target === 'payroll');
+          if (json && json.status === 'success' && isTargetGaji && Array.isArray(json.data) && json.data.length > 0) {
+            const valid = json.data.filter((item: any) => item && (item.nip || item.NIP) && !item.nisn && !item.nipd && !item.rombel);
+            if (valid.length > 0) {
+              const parseNum = (v: any) => {
+                if (!v) return 0;
+                if (typeof v === 'number') return v;
+                return Number(String(v).replace(/[^0-9]/g, '')) || 0;
+              };
+              const mapped: GajiData[] = valid.map((item: any, idx: number) => {
+                const rawNip = String(item.nip || item.NIP || '').trim();
+                const rawNama = String(item.nama || item.Nama || '').trim();
+                const rawBulan = String(item.bulan || item.Bulan || item.periode || '').trim();
+                return {
+                  id: item.id || `GAJI-${rawNip || idx + 1}`,
+                  no: Number(item.no || item.No) || (idx + 1),
+                  nip: rawNip,
+                  nama: rawNama,
+                  bulan: rawBulan,
+                  gaji_pokok: parseNum(item.gaji_pokok || item.gajiPokok || item.Gaji_Pokok),
+                  gajiPokok: parseNum(item.gaji_pokok || item.gajiPokok || item.Gaji_Pokok),
+                  jum_kotor: parseNum(item.jum_kotor || item.jumKotor || item.Jum_Kotor),
+                  jumKotor: parseNum(item.jum_kotor || item.jumKotor || item.Jum_Kotor),
+                  jum_bersih: parseNum(item.jum_bersih || item.jumBersih || item.Jum_bersih),
+                  jumBersih: parseNum(item.jum_bersih || item.jumBersih || item.Jum_bersih),
+                  rowIndex: item.rowIndex || idx + 2
+                };
+              });
+              cachedGajiList = mapped;
+              return mapped;
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn("fetchGajiFromGoogleSheets error:", err?.message || err);
+      }
+      return cachedGajiList;
+    })().finally(() => {
+      fetchGajiPromise = null;
+    });
+
+    return fetchGajiPromise;
+  }
+
+  // GET Data Gaji GTK
+  app.get("/api/gaji", async (req, res) => {
+    const isForce = req.query.force === 'true';
+    if (isForce || cachedGajiList.length === 0 || cachedGajiList.length <= 8) {
+      const liveList = await fetchGajiFromGoogleSheets();
+      if (liveList && liveList.length > 0) {
+        cachedGajiList = liveList;
+      }
+    }
+    res.json({
+      status: "success",
+      total: cachedGajiList.length,
+      data: cachedGajiList
+    });
+  });
+
+  // POST Add / Update Data Gaji
+  app.post("/api/gaji", async (req, res) => {
+    const item = req.body.item || req.body;
+    if (!item || !item.nip) {
+      return res.status(400).json({ status: "error", message: "NIP wajib diisi" });
+    }
+
+    const cleanNip = (n: any) => String(n || "").replace(/[^0-9]/g, "");
+    const targetNip = cleanNip(item.nip);
+
+    const existingIdx = cachedGajiList.findIndex(g => cleanNip(g.nip) === targetNip);
+    if (existingIdx >= 0) {
+      cachedGajiList[existingIdx] = { ...cachedGajiList[existingIdx], ...item };
+    } else {
+      cachedGajiList.unshift({
+        id: item.id || `GAJI-${item.nip}`,
+        no: cachedGajiList.length + 1,
+        ...item
+      });
+    }
+
+    // Forward to Google Apps Script if webAppUrl configured
+    if (appConfig.webAppUrl) {
+      fetch(appConfig.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "saveGaji",
+          target: "gaji",
+          item: item
+        }),
+        signal: AbortSignal.timeout(10000)
+      }).catch(err => {
+        console.warn("Save gaji Google Sheets forwarding warning:", err?.message || err);
+      });
+    }
+
+    res.json({ status: "success", message: "Data gaji berhasil disimpan", data: item });
+  });
+
+  // DELETE Data Gaji
+  app.delete("/api/gaji/:id", async (req, res) => {
+    const idOrNip = req.params.id;
+    const cleanNip = (n: any) => String(n || "").replace(/[^0-9]/g, "");
+    const target = cleanNip(idOrNip);
+
+    cachedGajiList = cachedGajiList.filter(g => g.id !== idOrNip && cleanNip(g.nip) !== target);
+
+    if (appConfig.webAppUrl) {
+      fetch(appConfig.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "deleteGaji",
+          target: "gaji",
+          id: idOrNip,
+          nip: idOrNip
+        }),
+        signal: AbortSignal.timeout(10000)
+      }).catch(err => {
+        console.warn("Delete gaji Google Sheets forwarding warning:", err?.message || err);
+      });
+    }
+
+    res.json({ status: "success", message: "Data gaji berhasil dihapus" });
+  });
+
+  // POST Sync All Data Gaji
+  app.post("/api/gaji/sync", async (req, res) => {
+    const items = req.body.items || cachedGajiList;
+    if (Array.isArray(items) && items.length > 0) {
+      cachedGajiList = items;
+      if (appConfig.webAppUrl) {
+        try {
+          await fetch(appConfig.webAppUrl, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "syncAllGaji",
+              target: "gaji",
+              items: cachedGajiList
+            }),
+            signal: AbortSignal.timeout(30000)
+          });
+        } catch (err) {
+          console.warn("Sync all Gaji warning:", err);
+        }
+      }
+    }
+    res.json({ status: "success", message: "Sinkronisasi data gaji selesai", total: cachedGajiList.length });
+  });
+
+  // Cache & Endpoint untuk Usulan PIP
+  let cachedPIPList: any[] = [];
+  let fetchPIPPromise: Promise<any[] | null> | null = null;
+
+  async function fetchPIPFromGoogleSheets(): Promise<any[] | null> {
+    if (fetchPIPPromise) return fetchPIPPromise;
+
+    fetchPIPPromise = (async () => {
+      try {
+        if (appConfig.spreadsheetId) {
+          const gvizUrl = `https://docs.google.com/spreadsheets/d/${appConfig.spreadsheetId}/gviz/tq?tqx=out:json&sheet=pip&_t=${Date.now()}`;
+          const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(20000) });
+          if (res.ok) {
+            const text = await res.text();
+            const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+            if (jsonText) {
+              const parsed = JSON.parse(jsonText);
+              const rawRows = parsed.table?.rows || [];
+              if (rawRows.length > 0) {
+                let headerRowIndex = 0;
+                let nisnCol = 0;
+                let namaCol = 1;
+                let alasanCol = 2;
+
+                const firstRowCells = rawRows[0]?.c?.map((c: any) => c && c.v !== null ? String(c.v).trim().toLowerCase() : '') || [];
+                const hasHeader = firstRowCells.some((c: string) => c.includes('nisn') || c.includes('nama') || c.includes('alasan') || c.includes('layak') || c.includes('usul'));
+                if (hasHeader) {
+                  firstRowCells.forEach((c: string, idx: number) => {
+                    if (c.includes('nisn')) nisnCol = idx;
+                    if (c.includes('nama') || c.includes('murid')) namaCol = idx;
+                    if (c.includes('alasan') || c.includes('layak') || c.includes('usul')) alasanCol = idx;
+                  });
+                  headerRowIndex = 1;
+                }
+
+                const list: any[] = [];
+                for (let i = headerRowIndex; i < rawRows.length; i++) {
+                  const row = rawRows[i]?.c;
+                  if (!row) continue;
+                  const nisn = row[nisnCol]?.v !== null && row[nisnCol]?.v !== undefined ? String(row[nisnCol].v).trim() : '';
+                  const nama = row[namaCol]?.v !== null && row[namaCol]?.v !== undefined ? String(row[namaCol].v).trim() : '';
+                  const alasan = row[alasanCol]?.v !== null && row[alasanCol]?.v !== undefined ? String(row[alasanCol].v).trim() : '';
+                  if (nisn || nama) {
+                    list.push({
+                      rowIndex: i + 1,
+                      no: list.length + 1,
+                      nisn,
+                      nama,
+                      alasan_layak: alasan,
+                      alasanLayak: alasan
+                    });
+                  }
+                }
+                if (list.length > 0) {
+                  cachedPIPList = list;
+                  return list;
+                }
+              }
+            }
+          }
+        }
+
+        if (appConfig.webAppUrl) {
+          const url = appConfig.webAppUrl + (appConfig.webAppUrl.includes('?') ? '&' : '?') + 'sheet=pip&_t=' + Date.now();
+          const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+              const list = json.data.map((item: any, idx: number) => ({
+                rowIndex: item.rowIndex || idx + 2,
+                no: idx + 1,
+                nisn: item.nisn || item.NISN || '',
+                nama: item.nama || item.Nama_Murid || item.Nama || '',
+                alasan_layak: item.alasan_layak || item.alasan_usul || '',
+                alasanLayak: item.alasan_layak || item.alasan_usul || ''
+              }));
+              cachedPIPList = list;
+              return list;
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn("fetchPIPFromGoogleSheets error:", err?.message || err);
+      }
+      return cachedPIPList;
+    })().finally(() => {
+      fetchPIPPromise = null;
+    });
+
+    return fetchPIPPromise;
+  }
+
+  // GET Usulan PIP
+  app.get("/api/pip", async (req, res) => {
+    const isForce = req.query.force === 'true';
+    if (isForce || cachedPIPList.length === 0) {
+      const liveList = await fetchPIPFromGoogleSheets();
+      if (liveList && liveList.length > 0) {
+        cachedPIPList = liveList;
+      }
+    }
+    res.json({
+      status: "success",
+      total: cachedPIPList.length,
+      data: cachedPIPList
+    });
+  });
+
+  // Kuota & Target Sasaran Usulan PIP (default 50 siswa, kelas 10, 11, 12)
+  let cachedPIPKuota = 50;
+  let cachedPIPTargetSasaran: string[] = ['10', '11', '12'];
+
+  // GET Kuota & Target Sasaran Usulan PIP
+  app.get("/api/pip/kuota", (req, res) => {
+    res.json({ 
+      status: "success", 
+      kuota: cachedPIPKuota,
+      targetSasaran: cachedPIPTargetSasaran
+    });
+  });
+
+  // POST Update Kuota & Target Sasaran Usulan PIP
+  app.post("/api/pip/kuota", (req, res) => {
+    const { kuota, targetSasaran } = req.body;
+    let changed = false;
+
+    if (typeof kuota === 'number' && kuota >= 0) {
+      cachedPIPKuota = kuota;
+      changed = true;
+    }
+
+    if (Array.isArray(targetSasaran)) {
+      // Validasi opsi tingkat kelas
+      const valid = targetSasaran.map(String).filter(t => ['10', '11', '12'].includes(t));
+      if (valid.length > 0) {
+        cachedPIPTargetSasaran = valid;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      return res.json({ 
+        status: "success", 
+        kuota: cachedPIPKuota, 
+        targetSasaran: cachedPIPTargetSasaran,
+        message: `Pengaturan PIP berhasil diperbarui` 
+      });
+    }
+
+    res.status(400).json({ status: "error", message: "Data kuota atau target sasaran tidak valid" });
+  });
+
+  // POST Update Alasan Layak PIP
+  app.post("/api/pip", async (req, res) => {
+    const { nisn, nama, alasan_layak, rowIndex } = req.body;
+    if (!nisn && !nama) {
+      return res.status(400).json({ status: "error", message: "NISN atau Nama wajib disertakan" });
+    }
+
+    const isAddingNew = Boolean(alasan_layak && String(alasan_layak).trim() !== "");
+    const currentlyFilled = cachedPIPList.filter(p => Boolean(String(p.alasan_layak || p.alasanLayak || '').trim())).length;
+    const existingEntry = cachedPIPList.find(p => (nisn && p.nisn === nisn) || (nama && String(p.nama).toLowerCase() === String(nama).toLowerCase()));
+    const wasAlreadyFilled = Boolean(existingEntry && String(existingEntry.alasan_layak || existingEntry.alasanLayak || '').trim());
+
+    // Cek batas kuota jika mencoba menambahkan usulan baru
+    if (isAddingNew && !wasAlreadyFilled && currentlyFilled >= cachedPIPKuota) {
+      return res.status(400).json({ 
+        status: "error", 
+        message: `Kuota usulan PIP sebanyak ${cachedPIPKuota} siswa telah tercapai. Tidak dapat menambah usulan baru.` 
+      });
+    }
+
+    const idx = cachedPIPList.findIndex(p => (nisn && p.nisn === nisn) || (nama && p.nama.toLowerCase() === nama.toLowerCase()));
+    if (idx >= 0) {
+      cachedPIPList[idx].alasan_layak = alasan_layak;
+      cachedPIPList[idx].alasanLayak = alasan_layak;
+    } else {
+      cachedPIPList.push({
+        no: cachedPIPList.length + 1,
+        nisn: nisn || '',
+        nama: nama || '',
+        alasan_layak: alasan_layak || '',
+        alasanLayak: alasan_layak || '',
+        rowIndex: rowIndex || cachedPIPList.length + 2
+      });
+    }
+
+    // Forward ke Google Apps Script jika webAppUrl tersedia
+    if (appConfig.webAppUrl) {
+      try {
+        await fetch(appConfig.webAppUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "savePIP",
+            target: "pip",
+            nisn,
+            nama,
+            alasan_layak,
+            alasan_usul: alasan_layak,
+            rowIndex
+          }),
+          signal: AbortSignal.timeout(15000)
+        });
+      } catch (err: any) {
+        console.warn("Save PIP to Google Apps Script warning:", err?.message || err);
+      }
+    }
+
+    res.json({ status: "success", message: "Alasan layak PIP berhasil disimpan", data: { nisn, nama, alasan_layak } });
   });
 
   // GET Wali Kelas (Map & List)

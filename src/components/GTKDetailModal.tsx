@@ -17,6 +17,7 @@ import {
 import { GTKData, PembelajaranData } from '../types';
 import { normalizeNip } from '../utils/authUtils';
 import { safeGetItem } from '../utils/storage';
+import { normalizeRawTugasString } from '../utils/tugasTambahanUtils';
 
 interface GTKDetailModalProps {
   isOpen: boolean;
@@ -78,10 +79,7 @@ export const GTKDetailModal: React.FC<GTKDetailModalProps> = ({
 
   const tugasTambahanList = useMemo(() => {
     if (!gtk) return [];
-    const raw = (gtk.tugasTambahan || '').trim();
-    if (!raw || raw === '-') return [];
-    const items = raw.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
-    return items.length > 0 ? items : [raw];
+    return normalizeRawTugasString(gtk.tugasTambahan || '');
   }, [gtk]);
 
   if (!isOpen || !gtk) return null;

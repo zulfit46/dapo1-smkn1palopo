@@ -7,6 +7,16 @@ export const SHEET_NAME_KGB = "kgb";
 export const SHEET_NAME_MUTASI_MASUK = "mutasi_masuk";
 export const SHEET_NAME_MUTASI_KELUAR = "mutasi_keluar";
 export const SHEET_NAME_PEMBELAJARAN = "pembelajaran";
+export const SHEET_NAME_GAJI = "gaji";
+export const SHEET_NAME_PIP = "pip";
+
+export const GAJI_OFFICIAL_HEADERS = [
+  "No", "NIP", "Nama", "Bulan", "Gaji_Pokok", "Jum_Kotor", "Jum_bersih"
+];
+
+export const PIP_OFFICIAL_HEADERS = [
+  "NISN", "Nama_Murid", "alasan_layak"
+];
 
 export const PTK_OFFICIAL_HEADERS = [
   "No", "Nama", "NUPTK", "JK", "Tempat Lahir", "Tanggal Lahir", "NIP", "Status Kepegawaian",
@@ -75,6 +85,10 @@ const SHEET_NAME_NAIKPANGKAT = "naikpangkat";
 const SHEET_NAME_KGB = "kgb";
 const SHEET_NAME_MUTASI_MASUK = "mutasi_masuk";
 const SHEET_NAME_MUTASI_KELUAR = "mutasi_keluar";
+const SHEET_NAME_GAJI = "gaji";
+const SHEET_NAME_PIP = "pip";
+const GAJI_OFFICIAL_HEADERS = ["No", "NIP", "Nama", "Bulan", "Gaji_Pokok", "Jum_Kotor", "Jum_bersih"];
+const PIP_OFFICIAL_HEADERS = ["NISN", "Nama_Murid", "alasan_layak"];
 const DRIVE_FOLDER_ID_MUTASI = "1sGqbpA6uctgvOmYUwyxNP8pC5ORZUy56";
 
 /**
@@ -352,6 +366,42 @@ function getPembelajaranSheet() {
   return sheet;
 }
 
+function getGajiSheet() {
+  const ss = getSpreadsheet();
+  const allSheets = ss.getSheets();
+  let sheet = allSheets.find(s => {
+    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return name === "gaji" || name === "datagaji" || name === "gajigtk" || name === "payroll";
+  });
+  if (!sheet) {
+    sheet = ss.getSheetByName(SHEET_NAME_GAJI);
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_GAJI);
+    sheet.appendRow(GAJI_OFFICIAL_HEADERS);
+    sheet.getRange(1, 1, 1, GAJI_OFFICIAL_HEADERS.length).setFontWeight("bold").setBackground("#ecfdf5");
+  }
+  return sheet;
+}
+
+function getPIPSheet() {
+  const ss = getSpreadsheet();
+  const allSheets = ss.getSheets();
+  let sheet = allSheets.find(s => {
+    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return name === "pip" || name === "usulanpip" || name === "datapip";
+  });
+  if (!sheet) {
+    sheet = ss.getSheetByName(SHEET_NAME_PIP);
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_PIP);
+    sheet.appendRow(PIP_OFFICIAL_HEADERS);
+    sheet.getRange(1, 1, 1, PIP_OFFICIAL_HEADERS.length).setFontWeight("bold").setBackground("#e0f2fe");
+  }
+  return sheet;
+}
+
 /**
  * Helper otomatis update kolom status & ket siswa di sheet "data"
  * Jika siswa mutasi keluar, status diubah menjadi "Tidak Aktif" dan ket diisi sesuai input (Mutasi / Mengundurkan Diri).
@@ -434,7 +484,9 @@ function updateStudentStatusInSheet(targetNisn, targetNipd, newStatus, newKet, t
  */
 function doGet(e) {
   try {
-    const rawTarget = (e && e.parameter && e.parameter.sheet) ? String(e.parameter.sheet).toLowerCase() : "data";
+    const rawTarget = (e && e.parameter && (e.parameter.sheet || e.parameter.target || e.parameter.action || e.parameter.type)) 
+      ? String(e.parameter.sheet || e.parameter.target || e.parameter.action || e.parameter.type).toLowerCase() 
+      : "data";
     
     // 1. DATA GTK
     if (rawTarget === "gtk") {
@@ -857,6 +909,82 @@ function doGet(e) {
       });
     }
 
+    // 7. DATA GAJI
+    if (rawTarget === "gaji" || rawTarget === "datagaji" || rawTarget === "gajigtk" || rawTarget === "payroll") {
+      const sheet = getGajiSheet();
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) {
+        return responseJSON({ status: "success", target: "gaji", total: 0, data: [] });
+      }
+      const headers = data[0].map(h => String(h).trim());
+      const rows = data.slice(1);
+      const list = rows.map((row, index) => {
+        const obj = { rowIndex: index + 2 };
+        headers.forEach((header, colIdx) => {
+          let val = row[colIdx];
+          const strVal = val !== undefined && val !== null ? String(val).trim() : "";
+          obj[header] = strVal;
+          const hClean = String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          obj[hClean] = strVal;
+
+          if (hClean === "no") obj["no"] = Number(strVal) || (index + 1);
+          if (hClean === "nip") obj["nip"] = strVal;
+          if (hClean === "nama" || hClean === "namagtk" || hClean === "namaptk") obj["nama"] = strVal;
+          if (hClean === "bulan" || hClean === "bln" || hClean === "periode") obj["bulan"] = strVal;
+          if (hClean === "gajipokok" || hClean === "gapok") obj["gaji_pokok"] = strVal;
+          if (hClean === "jumkotor" || hClean === "jumlahkotor" || hClean === "gajikotor") obj["jum_kotor"] = strVal;
+          if (hClean === "jumbersih" || hClean === "jumlahbersih" || hClean === "gajibersih") obj["jum_bersih"] = strVal;
+        });
+        obj.id = obj.id || "GAJI-" + (obj.nip ? obj.nip : String(index + 1));
+        return obj;
+      });
+
+      return responseJSON({
+        status: "success",
+        target: "gaji",
+        total: list.length,
+        data: list,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 8. DATA USULAN PIP
+    if (rawTarget === "pip" || rawTarget === "usulanpip" || rawTarget === "datapip") {
+      const sheet = getPIPSheet();
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) {
+        return responseJSON({ status: "success", target: "pip", total: 0, data: [] });
+      }
+      const headers = data[0].map(h => String(h).trim());
+      const rows = data.slice(1);
+      const list = rows.map((row, index) => {
+        const obj = { rowIndex: index + 2, no: index + 1 };
+        headers.forEach((header, colIdx) => {
+          let val = row[colIdx];
+          const strVal = val !== undefined && val !== null ? String(val).trim() : "";
+          obj[header] = strVal;
+          const hClean = String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          obj[hClean] = strVal;
+
+          if (hClean === "nisn") obj["nisn"] = strVal;
+          if (hClean === "nama" || hClean === "namamurid" || hClean === "namasiswa") obj["nama"] = strVal;
+          if (hClean === "alasanlayak" || hClean === "alasanusul" || hClean === "alasan") {
+            obj["alasan_layak"] = strVal;
+            obj["alasanLayak"] = strVal;
+          }
+        });
+        return obj;
+      });
+
+      return responseJSON({
+        status: "success",
+        target: "pip",
+        total: list.length,
+        data: list,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     // 4. Default: DATA SISWA
     const sheet = getStudentSheet();
     const data = sheet.getDataRange().getValues();
@@ -1076,7 +1204,54 @@ function doPost(e) {
       });
     }
 
-    const targetType = contents.target || (contents.mutasi_masuk || contents.mutasimasuk || contents.mutasi ? "mutasi_masuk" : (contents.mutasi_keluar || contents.mutasikeluar ? "mutasi_keluar" : (contents.gtk ? "gtk" : (contents.naikpangkat ? "naikpangkat" : (contents.kgb ? "kgb" : "data")))));
+    const targetType = contents.target || (contents.pip || contents.usulanpip ? "pip" : (contents.gaji || contents.datagaji ? "gaji" : (contents.mutasi_masuk || contents.mutasimasuk || contents.mutasi ? "mutasi_masuk" : (contents.mutasi_keluar || contents.mutasikeluar ? "mutasi_keluar" : (contents.gtk ? "gtk" : (contents.naikpangkat ? "naikpangkat" : (contents.kgb ? "kgb" : "data")))))));
+
+    // TARGET: PIP (Usulan PIP)
+    if (targetType === "pip" || action === "savePIP" || action === "updatePIP") {
+      const sheet = getPIPSheet();
+      const targetNisn = String(contents.nisn || "").trim();
+      const targetNama = String(contents.nama || "").trim().toLowerCase();
+      const alasanLayak = String(contents.alasan_layak || contents.alasan_usul || contents.alasanLayak || "").trim();
+      
+      const values = sheet.getDataRange().getValues();
+      let headerRow = values[0] ? values[0].map(h => String(h).trim()) : ["NISN", "Nama_Murid", "alasan_layak"];
+      let nisnCol = 0;
+      let namaCol = 1;
+      let alasanCol = 2;
+
+      headerRow.forEach((h, idx) => {
+        const hClean = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (hClean.includes('nisn')) nisnCol = idx;
+        if (hClean.includes('nama') || hClean.includes('murid')) namaCol = idx;
+        if (hClean.includes('alasan') || hClean.includes('layak') || hClean.includes('usul')) alasanCol = idx;
+      });
+
+      let foundRowIndex = -1;
+      for (let r = 1; r < values.length; r++) {
+        const rNisn = String(values[r][nisnCol] || "").trim();
+        const rNama = String(values[r][namaCol] || "").trim().toLowerCase();
+        if ((targetNisn && rNisn === targetNisn) || (targetNama && rNama === targetNama)) {
+          foundRowIndex = r + 1; // 1-indexed in sheet
+          break;
+        }
+      }
+
+      if (foundRowIndex > 0) {
+        sheet.getRange(foundRowIndex, alasanCol + 1).setValue(alasanLayak);
+      } else {
+        const newRow = [];
+        newRow[nisnCol] = targetNisn;
+        newRow[namaCol] = contents.nama || "";
+        newRow[alasanCol] = alasanLayak;
+        sheet.appendRow(newRow);
+      }
+
+      return responseJSON({
+        status: "success",
+        message: "Alasan layak PIP berhasil disimpan ke sheet pip",
+        data: { nisn: targetNisn, nama: contents.nama, alasan_layak: alasanLayak }
+      });
+    }
 
     // 0. TARGET: MUTASI_MASUK
     if (targetType === "mutasi_masuk" || targetType === "mutasimasuk" || targetType === "mutasi") {
@@ -1459,6 +1634,84 @@ function doPost(e) {
         cellRange.setNumberFormat("@");
         cellRange.setValues([rowValues]);
         return responseJSON({ status: "success", message: "Data mutasi keluar baru berhasil ditambahkan" });
+      }
+    }
+
+    // 0C. TARGET: GAJI
+    if (targetType === "gaji" || targetType === "datagaji" || targetType === "gajigtk" || targetType === "payroll") {
+      const sheet = getGajiSheet();
+      const data = sheet.getDataRange().getValues();
+      const headers = data[0].map(h => String(h).trim());
+
+      // Sync All / Import All
+      if (action === "syncAll" || action === "importAll" || action === "saveAll" || action === "syncAllGaji") {
+        const items = contents.items || contents.data || contents.gaji || [];
+        if (items.length > 0) {
+          const rowsToWrite = items.map((g, idx) => {
+            return headers.map(h => {
+              const hClean = String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (hClean === "no") return String(g.no || (idx + 1));
+              if (hClean === "nip") return String(g.nip || "");
+              if (hClean === "nama" || hClean === "namagtk" || hClean === "namaptk") return String(g.nama || "");
+              if (hClean === "bulan" || hClean === "bln" || hClean === "periode") return String(g.bulan || g.Bulan || "");
+              if (hClean === "gajipokok" || hClean === "gapok") return String(g.gaji_pokok || g.gajiPokok || "");
+              if (hClean === "jumkotor" || hClean === "jumlahkotor" || hClean === "gajikotor") return String(g.jum_kotor || g.jumKotor || "");
+              if (hClean === "jumbersih" || hClean === "jumlahbersih" || hClean === "gajibersih") return String(g.jum_bersih || g.jumBersih || "");
+              return String(g[h] || g[hClean] || "");
+            });
+          });
+
+          const neededRows = rowsToWrite.length + 1;
+          const maxRows = sheet.getMaxRows();
+          if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 10);
+          if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+
+          const targetRange = sheet.getRange(2, 1, rowsToWrite.length, headers.length);
+          targetRange.setNumberFormat("@");
+          targetRange.setValues(rowsToWrite);
+          return responseJSON({ status: "success", message: "Berhasil sinkronisasi " + rowsToWrite.length + " data Gaji!" });
+        }
+      }
+
+      // Single Add / Update
+      const gItem = contents.item || contents.data || contents;
+      const targetNip = String(gItem.nip || gItem.NIP || "").replace(/[\s.-]/g, '').trim();
+      let foundRow = -1;
+
+      const nipColIdx = headers.findIndex(h => h.toLowerCase().trim() === 'nip');
+      const colToSearch = nipColIdx >= 0 ? nipColIdx : 1;
+
+      for (let i = 1; i < data.length; i++) {
+        const rNip = String(data[i][colToSearch] || "").replace(/[\s.-]/g, '').trim();
+        if (targetNip && rNip === targetNip) {
+          foundRow = i + 1;
+          break;
+        }
+      }
+
+      const rowValues = headers.map(h => {
+        const hClean = String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (hClean === "no") return String(gItem.no || (foundRow > 1 ? data[foundRow - 1][0] : sheet.getLastRow()));
+        if (hClean === "nip") return String(gItem.nip || "");
+        if (hClean === "nama" || hClean === "namagtk" || hClean === "namaptk") return String(gItem.nama || "");
+        if (hClean === "bulan" || hClean === "bln" || hClean === "periode") return String(gItem.bulan || gItem.Bulan || "");
+        if (hClean === "gajipokok" || hClean === "gapok") return String(gItem.gaji_pokok || gItem.gajiPokok || "");
+        if (hClean === "jumkotor" || hClean === "jumlahkotor" || hClean === "gajikotor") return String(gItem.jum_kotor || gItem.jumKotor || "");
+        if (hClean === "jumbersih" || hClean === "jumlahbersih" || hClean === "gajibersih") return String(gItem.jum_bersih || gItem.jumBersih || "");
+        return String(gItem[h] || gItem[hClean] || "");
+      });
+
+      if (foundRow > 1) {
+        const cellRange = sheet.getRange(foundRow, 1, 1, headers.length);
+        cellRange.setNumberFormat("@");
+        cellRange.setValues([rowValues]);
+        return responseJSON({ status: "success", message: "Data gaji berhasil diperbarui", row: foundRow });
+      } else {
+        const newRowIdx = sheet.getLastRow() + 1;
+        const cellRange = sheet.getRange(newRowIdx, 1, 1, headers.length);
+        cellRange.setNumberFormat("@");
+        cellRange.setValues([rowValues]);
+        return responseJSON({ status: "success", message: "Data gaji baru berhasil ditambahkan" });
       }
     }
 

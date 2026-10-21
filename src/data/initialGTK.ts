@@ -424,7 +424,7 @@ export const INITIAL_GTK_LIST: GTKData[] = [
     telepon: "-",
     hp: "082345678912",
     email: "rustam.tu@smkn1palopo.sch.id",
-    tugasTambahan: "Kepala Tata Usaha",
+    tugasTambahan: "Kepala Tata Usaha, Bendahara BOS, Bendahara BOP",
     skCpns: "-",
     tanggalCpns: "-",
     skPengangkatan: "800/210/PPPK/BKD",

@@ -68,6 +68,7 @@ const ACCESS_PRESETS: AccessPreset[] = [
       'registrasi',
       'data-periodik',
       'absen',
+      'pip',
       'gtk-biodata',
       'gtk-pangkat',
       'gtk-kgb',
@@ -88,7 +89,7 @@ const ACCESS_PRESETS: AccessPreset[] = [
     name: 'Wali Kelas Lengkap',
     desc: 'Semua modul Peserta Didik (termasuk Verval & Periodik)',
     color: 'indigo',
-    tabs: ['dashboard', 'biodata', 'absen-pd', 'registrasi', 'data-periodik', 'absen', 'rekap-pd']
+    tabs: ['dashboard', 'biodata', 'absen-pd', 'registrasi', 'data-periodik', 'absen', 'pip', 'rekap-pd']
   },
   {
     id: 'tata_usaha',

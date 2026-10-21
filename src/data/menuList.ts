@@ -61,6 +61,16 @@ export const DAFTAR_AKSES_MENU: MenuItemDefinition[] = [
     contohInput: 'gtk-kgb'
   },
   {
+    id: 'gtk-gaji',
+    kode: 'gtk-gaji',
+    nama: 'Gaji GTK',
+    kategori: 'GTK',
+    tab: 'gtk-gaji',
+    aliases: ['gtk-gaji', 'gaji', 'gaji-gtk', 'payroll', 'data-gaji', 'daftar-gaji'],
+    deskripsi: 'Data rincian gaji pokok, jumlah kotor, dan jumlah bersih GTK',
+    contohInput: 'gtk-gaji'
+  },
+  {
     id: 'gtk-pembelajaran',
     kode: 'gtk-pembelajaran',
     nama: 'Pembelajaran',
@@ -69,6 +79,16 @@ export const DAFTAR_AKSES_MENU: MenuItemDefinition[] = [
     aliases: ['gtk-pembelajaran', 'pembelajaran', 'jadwal-pembelajaran', 'mengajar', 'sk-mengajar', 'pembagian-tugas', 'tugas-mengajar'],
     deskripsi: 'Data SK pembagian tugas mengajar, rombel, mapel, dan jam mengajar (JJM) GTK',
     contohInput: 'gtk-pembelajaran'
+  },
+  {
+    id: 'gtk-tugas-tambahan',
+    kode: 'gtk-tugas_tambahan',
+    nama: 'Tugas Tambahan',
+    kategori: 'GTK',
+    tab: 'gtk-tugas-tambahan',
+    aliases: ['gtk-tugas_tambahan', 'gtk-tugastambahan', 'gtk-tugas-tambahan', 'tugas-tambahan', 'tugastambahan', 'tugas_tambahan', 'tugas-tambahan-gtk'],
+    deskripsi: 'Data penugasan tugas tambahan guru (Wali Kelas, Guru Piket, Kepala Lab, Pembina, dll)',
+    contohInput: 'gtk-tugas_tambahan'
   },
   {
     id: 'gtk-akses_menu',
@@ -141,6 +161,16 @@ export const DAFTAR_AKSES_MENU: MenuItemDefinition[] = [
     aliases: ['peserta_didik-mutasi', 'peserta-didik-mutasi', 'mutasi', 'mutasi-pd', 'pd-mutasi', 'mutasi-siswa', 'mutasi-masuk', 'mutasi-keluar'],
     deskripsi: 'Pengajuan dan pencatatan mutasi masuk dan mutasi keluar peserta didik',
     contohInput: 'peserta_didik-mutasi'
+  },
+  {
+    id: 'peserta_didik-pip',
+    kode: 'peserta_didik-pip',
+    nama: 'Usulan PIP',
+    kategori: 'Peserta Didik',
+    tab: 'pip',
+    aliases: ['peserta_didik-pip', 'peserta-didik-pip', 'pip', 'pip-pd', 'usulan-pip', 'usulanpip'],
+    deskripsi: 'Pencatatan dan pengusulan alasan layak Program Indonesia Pintar (PIP)',
+    contohInput: 'peserta_didik-pip'
   },
   {
     id: 'peserta_didik-surat',
@@ -247,6 +277,9 @@ export function parseAksesMenuString(raw?: string | null): Set<ActiveTab> | null
       allowedTabs.add('registrasi');
       allowedTabs.add('data-periodik');
       allowedTabs.add('absen');
+      allowedTabs.add('mutasi');
+      allowedTabs.add('pip');
+      allowedTabs.add('surat');
       return;
     }
 
@@ -256,8 +289,12 @@ export function parseAksesMenuString(raw?: string | null): Set<ActiveTab> | null
       allowedTabs.add('gtk');
       allowedTabs.add('gtk-pangkat');
       allowedTabs.add('gtk-kgb');
+      allowedTabs.add('gtk-gaji');
+      allowedTabs.add('gaji');
       allowedTabs.add('gtk-pembelajaran');
       allowedTabs.add('pembelajaran');
+      allowedTabs.add('gtk-tugas-tambahan');
+      allowedTabs.add('tugas-tambahan');
       return;
     }
 
@@ -340,9 +377,19 @@ export function isTabPermitted(
   if (!currentUser) return true;
 
   // PENGECUALIAN KHUSUS:
-  // Menu Verval PD ('absen') SELALU diizinkan jika GTK tersebut adalah Wali Kelas,
-  // meskipun di pengaturan akses_menu / kolom akses_menu di spreadsheet ditiadakan.
+  // 1. Menu Verval PD ('absen') SELALU diizinkan jika GTK tersebut adalah Wali Kelas
   if (tab === 'absen' && Boolean(getWaliKelasForUser(currentUser, waliKelasList))) {
+    return true;
+  }
+
+  // 2. Menu Usulan PIP ('pip'): Selain Admin, HANYA tampil jika user adalah Wali Kelas
+  if (tab === 'pip') {
+    const isUser = isUserRole(currentUser);
+    if (isUser) {
+      // Role user biasa: Hanya diizinkan jika terdaftar sebagai Wali Kelas
+      return Boolean(getWaliKelasForUser(currentUser, waliKelasList));
+    }
+    // Admin selalu diizinkan
     return true;
   }
 
@@ -358,6 +405,10 @@ export function isTabPermitted(
     if (tab === 'gtk-biodata' && parsedSet.has('gtk')) return true;
     if (tab === 'rekap' && parsedSet.has('rekap-pd')) return true;
     if (tab === 'rekap-pd' && parsedSet.has('rekap')) return true;
+    if (tab === 'gaji' && parsedSet.has('gtk-gaji')) return true;
+    if (tab === 'gtk-gaji' && parsedSet.has('gaji')) return true;
+    if (tab === 'tugas-tambahan' && parsedSet.has('gtk-tugas-tambahan')) return true;
+    if (tab === 'gtk-tugas-tambahan' && parsedSet.has('tugas-tambahan')) return true;
 
     return parsedSet.has(tab);
   }
@@ -397,7 +448,9 @@ export function isCategoryPermitted(
       isTabPermitted('gtk-biodata', currentUser, waliKelasList) ||
       isTabPermitted('gtk-pangkat', currentUser, waliKelasList) ||
       isTabPermitted('gtk-kgb', currentUser, waliKelasList) ||
+      isTabPermitted('gtk-gaji', currentUser, waliKelasList) ||
       isTabPermitted('gtk-pembelajaran', currentUser, waliKelasList) ||
+      isTabPermitted('gtk-tugas-tambahan', currentUser, waliKelasList) ||
       isTabPermitted('akses-menu', currentUser, waliKelasList)
     );
   }
@@ -410,6 +463,7 @@ export function isCategoryPermitted(
       isTabPermitted('data-periodik', currentUser, waliKelasList) ||
       isTabPermitted('absen', currentUser, waliKelasList) ||
       isTabPermitted('mutasi', currentUser, waliKelasList) ||
+      isTabPermitted('pip', currentUser, waliKelasList) ||
       isTabPermitted('surat', currentUser, waliKelasList)
     );
   }

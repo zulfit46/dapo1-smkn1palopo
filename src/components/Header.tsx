@@ -42,6 +42,8 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Verval Peserta Didik (Verval PD)', subtitle: 'Verifikasi dan validasi status keaktifan peserta didik' };
       case 'mutasi':
         return { title: 'Mutasi Peserta Didik', subtitle: 'Pencatatan dan pengajuan mutasi masuk dan mutasi keluar siswa' };
+      case 'pip':
+        return { title: 'Usulan PIP', subtitle: 'Pencatatan dan pengusulan alasan layak Program Indonesia Pintar (PIP)' };
       case 'surat':
       case 'surat-pindah':
         return { title: 'Layanan Surat Peserta Didik', subtitle: 'Penerbitan Surat Keterangan Pindah dan Surat Keterangan Siswa Aktif' };
@@ -54,6 +56,9 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Riwayat Kepangkatan GTK', subtitle: 'Form input & data riwayat kenaikan pangkat GTK (NIP, Nama, Gol, No SK, Tgl SK, TMT, Masa Kerja)' };
       case 'gtk-kgb':
         return { title: 'Riwayat Kenaikan Gaji Berkala (KGB) GTK', subtitle: 'Form input & data riwayat KGB GTK (NIP, Nama, Gol, No SK, Tgl SK, TMT, Masa Kerja, Gaji Pokok)' };
+      case 'gtk-gaji':
+      case 'gaji':
+        return { title: 'Data Gaji GTK (Guru & Tenaga Kependidikan)', subtitle: 'Daftar rincian gaji pokok, jumlah kotor, dan jumlah bersih pegawai dari sheet gaji' };
       case 'gtk-pembelajaran':
       case 'pembelajaran':
         return { title: 'Pembelajaran & Beban Mengajar GTK', subtitle: 'Data pembagian tugas mengajar, SK mengajar, mata pelajaran, rombel, dan JJM guru dari sheet pembelajaran' };

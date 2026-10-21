@@ -22,6 +22,10 @@ const SHEET_NAME_NAIKPANGKAT = "naikpangkat";
 const SHEET_NAME_KGB = "kgb";
 const SHEET_NAME_MUTASI_MASUK = "mutasi_masuk";
 const SHEET_NAME_MUTASI_KELUAR = "mutasi_keluar";
+const SHEET_NAME_GAJI = "gaji";
+const SHEET_NAME_PIP = "pip";
+const GAJI_OFFICIAL_HEADERS = ["No", "NIP", "Nama", "Bulan", "Gaji_Pokok", "Jum_Kotor", "Jum_bersih"];
+const PIP_OFFICIAL_HEADERS = ["NISN", "Nama_Murid", "alasan_layak"];
 const DRIVE_FOLDER_ID_MUTASI = "1sGqbpA6uctgvOmYUwyxNP8pC5ORZUy56";
 
 /**
@@ -64,7 +68,7 @@ function formatToDDMMYYYY(val) {
   if (!str || str === "-" || str === "null" || str === "undefined") return "";
 
   // Pola YYYY-MM-DD
-  var ymdMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  var ymdMatch = str.match(/^(\\d{4})[\\/\\-](\\d{1,2})[\\/\\-](\\d{1,2})/);
   if (ymdMatch) {
     var y = ymdMatch[1];
     var m = ("0" + ymdMatch[2]).slice(-2);
@@ -73,7 +77,7 @@ function formatToDDMMYYYY(val) {
   }
 
   // Pola D/M/YYYY -> normalisasi ke DD/MM/YYYY
-  var dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  var dmyMatch = str.match(/^(\\d{1,2})[\\/\\-](\\d{1,2})[\\/\\-](\\d{4})/);
   if (dmyMatch) {
     var d2 = ("0" + dmyMatch[1]).slice(-2);
     var m2 = ("0" + dmyMatch[2]).slice(-2);
@@ -122,12 +126,12 @@ const OFFICIAL_KGB_HEADERS = [
 
 // List Header Resmi Mutasi Masuk
 const OFFICIAL_MUTASI_MASUK_HEADERS = [
-  "No", "NISN", "Nama_Siswa", "Provinsi", "Kab_kota", "Kecamatan", "Nama_Sekolah", "Rombel_Tujuan", "Tgl_Masuk", "Status", "Timestamp"
+  "No", "NISN", "Nama_Siswa", "Provinsi", "Kab_kota", "Kecamatan", "Nama_Sekolah", "Rombel_Tujuan", "Tgl_Masuk", "Status", "verval_oleh", "Timestamp"
 ];
 
 // List Header Resmi Mutasi Keluar
 const OFFICIAL_MUTASI_KELUAR_HEADERS = [
-  "No", "NIPD", "NISN", "Nama", "Tempat_Lahir", "tgl_Lahir", "Rombel", "Ket_Mutasi", "Pindah_Ke", "tgl_mutasi", "alasan_mutasi", "upload_berkas", "Status", "Timestamp"
+  "No", "NIPD", "NISN", "Nama", "Tempat_Lahir", "tgl_Lahir", "Rombel", "Ket_Mutasi", "Pindah_Ke", "tgl_mutasi", "alasan_mutasi", "upload_berkas", "Status", "verval_oleh", "Timestamp"
 ];
 
 // List Header Resmi PTK (sheet: ptk)
@@ -225,6 +229,14 @@ function getMutasiMasukSheet() {
     sheet = ss.insertSheet(SHEET_NAME_MUTASI_MASUK);
     sheet.appendRow(OFFICIAL_MUTASI_MASUK_HEADERS);
     sheet.getRange(1, 1, 1, OFFICIAL_MUTASI_MASUK_HEADERS.length).setFontWeight("bold").setBackground("#d1fae5");
+  } else {
+    var lastCol = sheet.getLastColumn();
+    if (lastCol > 0) {
+      var hRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''); });
+      if (hRow.indexOf('vervaloleh') === -1 && hRow.indexOf('verval') === -1) {
+        sheet.getRange(1, lastCol + 1).setValue('verval_oleh').setFontWeight('bold');
+      }
+    }
   }
   return sheet;
 }
@@ -243,6 +255,14 @@ function getMutasiKeluarSheet() {
     sheet = ss.insertSheet(SHEET_NAME_MUTASI_KELUAR);
     sheet.appendRow(OFFICIAL_MUTASI_KELUAR_HEADERS);
     sheet.getRange(1, 1, 1, OFFICIAL_MUTASI_KELUAR_HEADERS.length).setFontWeight("bold").setBackground("#ffe4e6");
+  } else {
+    var lastCol = sheet.getLastColumn();
+    if (lastCol > 0) {
+      var hRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''); });
+      if (hRow.indexOf('vervaloleh') === -1 && hRow.indexOf('verval') === -1) {
+        sheet.getRange(1, lastCol + 1).setValue('verval_oleh').setFontWeight('bold');
+      }
+    }
   }
   return sheet;
 }
@@ -283,11 +303,47 @@ function getPembelajaranSheet() {
   return sheet;
 }
 
+function getGajiSheet() {
+  const ss = getSpreadsheet();
+  const allSheets = ss.getSheets();
+  let sheet = allSheets.find(s => {
+    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return name === "gaji" || name === "datagaji" || name === "gajigtk" || name === "payroll";
+  });
+  if (!sheet) {
+    sheet = ss.getSheetByName(SHEET_NAME_GAJI);
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_GAJI);
+    sheet.appendRow(GAJI_OFFICIAL_HEADERS);
+    sheet.getRange(1, 1, 1, GAJI_OFFICIAL_HEADERS.length).setFontWeight("bold").setBackground("#ecfdf5");
+  }
+  return sheet;
+}
+
+function getPIPSheet() {
+  const ss = getSpreadsheet();
+  const allSheets = ss.getSheets();
+  let sheet = allSheets.find(s => {
+    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return name === "pip" || name === "usulanpip" || name === "datapip";
+  });
+  if (!sheet) {
+    sheet = ss.getSheetByName(SHEET_NAME_PIP);
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_PIP);
+    sheet.appendRow(PIP_OFFICIAL_HEADERS);
+    sheet.getRange(1, 1, 1, PIP_OFFICIAL_HEADERS.length).setFontWeight("bold").setBackground("#e0f2fe");
+  }
+  return sheet;
+}
+
 /**
  * Helper otomatis update kolom status & ket siswa di sheet "data"
  * Jika siswa mutasi keluar, status diubah menjadi "Tidak Aktif" dan ket diisi sesuai input (Mutasi / Mengundurkan Diri).
  */
-function updateStudentStatusInSheet(targetNisn, targetNipd, newStatus, newKet, targetNama) {
+function updateStudentStatusInSheet(targetNisn, targetNipd, newStatus, newKet, targetNama, vervalOleh) {
   try {
     var cleanNisn = String(targetNisn || '').trim();
     var cleanNipd = String(targetNipd || '').trim();
@@ -310,6 +366,10 @@ function updateStudentStatusInSheet(targetNisn, targetNipd, newStatus, newKet, t
       var hc = h.toLowerCase().replace(/[^a-z0-9]/g, '');
       return hc === 'ket' || hc === 'keterangan';
     });
+    var vervalCol = headers.findIndex(function(h) {
+      var hc = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return hc === 'vervaloleh' || hc === 'verval';
+    });
 
     if (statusCol < 0) {
       statusCol = headers.length;
@@ -320,6 +380,11 @@ function updateStudentStatusInSheet(targetNisn, targetNipd, newStatus, newKet, t
       ketCol = headers.length;
       headers.push("ket");
       studentSheet.getRange(1, ketCol + 1).setValue("ket").setFontWeight("bold");
+    }
+    if (vervalOleh && vervalCol < 0) {
+      vervalCol = headers.length;
+      headers.push("verval_oleh");
+      studentSheet.getRange(1, vervalCol + 1).setValue("verval_oleh").setFontWeight("bold");
     }
 
     for (var i = 1; i < data.length; i++) {
@@ -338,7 +403,10 @@ function updateStudentStatusInSheet(targetNisn, targetNipd, newStatus, newKet, t
         if (ketCol >= 0 && newKet !== undefined) {
           studentSheet.getRange(i + 1, ketCol + 1).setNumberFormat("@").setValue(newKet);
         }
-        Logger.log("Update sheet data siswa " + (cleanNisn || cleanNipd || cleanNama) + " -> status: " + newStatus + ", ket: " + newKet);
+        if (vervalCol >= 0 && vervalOleh) {
+          studentSheet.getRange(i + 1, vervalCol + 1).setNumberFormat("@").setValue(vervalOleh);
+        }
+        Logger.log("Update sheet data siswa " + (cleanNisn || cleanNipd || cleanNama) + " -> status: " + newStatus + ", ket: " + newKet + ", verval_oleh: " + vervalOleh);
         break;
       }
     }
@@ -353,7 +421,9 @@ function updateStudentStatusInSheet(targetNisn, targetNipd, newStatus, newKet, t
  */
 function doGet(e) {
   try {
-    const rawTarget = (e && e.parameter && e.parameter.sheet) ? String(e.parameter.sheet).toLowerCase() : "data";
+    const rawTarget = (e && e.parameter && (e.parameter.sheet || e.parameter.target || e.parameter.action || e.parameter.type)) 
+      ? String(e.parameter.sheet || e.parameter.target || e.parameter.action || e.parameter.type).toLowerCase() 
+      : "data";
     
     // 1. DATA GTK
     if (rawTarget === "gtk") {
@@ -382,7 +452,12 @@ function doGet(e) {
           if (hClean === "jk") obj["jk"] = strVal;
           if (hClean === "statuskepegawaian") obj["statusKepegawaian"] = strVal;
           if (hClean === "jenisptk") obj["jenisPtk"] = strVal;
+          if (hClean === "jenjang") obj["jenjang"] = strVal;
           if (hClean === "tugastambahan") obj["tugasTambahan"] = strVal;
+          if (hClean === "jabatanptk" || hClean === "jabatan") {
+            obj["jabatanPtk"] = strVal;
+            obj["jabatan_ptk"] = strVal;
+          }
           if (hClean === "pangkatgolongan") obj["pangkatGolongan"] = strVal;
           if (hClean === "nik") obj["nik"] = strVal;
           if (hClean === "hp" || hClean === "telepon") obj["hp"] = strVal;
@@ -421,11 +496,96 @@ function doGet(e) {
         return obj;
       });
 
+      // Sinkronisasi data dari sheet 'ptk' berdasarkan kunci NUPTK
+      try {
+        const ss = getSpreadsheet();
+        const ptkSheet = ss.getSheetByName("ptk") || ss.getSheetByName("PTK");
+        if (ptkSheet) {
+          const ptkData = ptkSheet.getDataRange().getValues();
+          if (ptkData.length > 1) {
+            const ptkHeaders = ptkData[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+            const nuptkIdx = ptkHeaders.indexOf("nuptk");
+            const jenjangIdx = ptkHeaders.indexOf("jenjang");
+            const tugasIdx = ptkHeaders.indexOf("tugastambahan");
+            const jabIdx = ptkHeaders.indexOf("jabatanptk") >= 0 ? ptkHeaders.indexOf("jabatanptk") : ptkHeaders.indexOf("jabatan");
+
+            if (nuptkIdx >= 0) {
+              const ptkMap = {};
+              for (let r = 1; r < ptkData.length; r++) {
+                const rRow = ptkData[r];
+                const cleanNuptk = String(rRow[nuptkIdx] || "").replace(/[^a-zA-Z0-9]/g, "").trim();
+                if (cleanNuptk && cleanNuptk !== "-") {
+                  ptkMap[cleanNuptk] = {
+                    jenjang: jenjangIdx >= 0 ? String(rRow[jenjangIdx] || "").trim() : "",
+                    tugasTambahan: tugasIdx >= 0 ? String(rRow[tugasIdx] || "").trim() : "",
+                    jabatanPtk: jabIdx >= 0 ? String(rRow[jabIdx] || "").trim() : ""
+                  };
+                }
+              }
+
+              gtkList.forEach(g => {
+                const gNuptk = String(g.nuptk || "").replace(/[^a-zA-Z0-9]/g, "").trim();
+                if (gNuptk && ptkMap[gNuptk]) {
+                  if (ptkMap[gNuptk].jenjang) g["jenjang"] = ptkMap[gNuptk].jenjang;
+                  if (ptkMap[gNuptk].tugasTambahan) g["tugasTambahan"] = ptkMap[gNuptk].tugasTambahan;
+                  if (ptkMap[gNuptk].jabatanPtk) {
+                    g["jabatanPtk"] = ptkMap[gNuptk].jabatanPtk;
+                    g["jabatan_ptk"] = ptkMap[gNuptk].jabatanPtk;
+                  }
+                }
+              });
+            }
+          }
+        }
+      } catch (errPTK) {
+        Logger.log("PTK enrichment error: " + errPTK.message);
+      }
+
       return responseJSON({
         status: "success",
         target: "gtk",
         total: gtkList.length,
         data: gtkList,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 1b. DATA RAW PTK (sheet: ptk)
+    if (rawTarget === "ptk") {
+      const ss = getSpreadsheet();
+      const ptkSheet = ss.getSheetByName("ptk") || ss.getSheetByName("PTK");
+      if (!ptkSheet) {
+        return responseJSON({ status: "success", target: "ptk", total: 0, data: [] });
+      }
+      const ptkData = ptkSheet.getDataRange().getValues();
+      if (ptkData.length <= 1) {
+        return responseJSON({ status: "success", target: "ptk", total: 0, data: [] });
+      }
+      const ptkHeaders = ptkData[0].map(h => String(h).trim());
+      const ptkRows = ptkData.slice(1);
+      const listPtk = ptkRows.map((row, idx) => {
+        const item = { rowIndex: idx + 2 };
+        ptkHeaders.forEach((head, cIdx) => {
+          let v = row[cIdx];
+          if (v instanceof Date) v = formatToDDMMYYYY(v);
+          const s = v !== undefined && v !== null ? String(v).trim() : "";
+          item[head] = s;
+          const hc = String(head).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          item[hc] = s;
+          if (hc === "jenjang") item["jenjang"] = s;
+          if (hc === "tugastambahan") item["tugasTambahan"] = s;
+          if (hc === "jabatanptk" || hc === "jabatan") {
+            item["jabatanPtk"] = s;
+            item["jabatan_ptk"] = s;
+          }
+        });
+        return item;
+      });
+      return responseJSON({
+        status: "success",
+        target: "ptk",
+        total: listPtk.length,
+        data: listPtk,
         timestamp: new Date().toISOString()
       });
     }
@@ -560,6 +720,7 @@ function doGet(e) {
           }
           if (hClean === "timestamp") obj["timestamp"] = strVal;
           if (hClean === "tglmasuk" || hClean === "tanggalmasuk") obj["tglMasuk"] = strVal;
+          if (hClean === "vervaloleh" || hClean === "verval") obj["verval_oleh"] = strVal;
         });
         obj.id = obj.id || "MUT-IN-" + (obj.nisn ? obj.nisn : String(index + 1));
         if (!obj.status) obj.status = "Pending";
@@ -613,6 +774,7 @@ function doGet(e) {
           if (hClean === "uploadberkas" || hClean === "berkas" || hClean === "file") obj["uploadBerkas"] = strVal;
           if (hClean === "status") obj["status"] = strVal;
           if (hClean === "timestamp") obj["timestamp"] = strVal;
+          if (hClean === "vervaloleh" || hClean === "verval") obj["verval_oleh"] = strVal;
         });
         obj.id = obj.id || "MUT-OUT-" + (obj.nisn ? obj.nisn : (obj.nipd ? obj.nipd : String(index + 1)));
         if (!obj.status) obj.status = "Selesai";
@@ -678,6 +840,82 @@ function doGet(e) {
       return responseJSON({
         status: "success",
         target: "pembelajaran",
+        total: list.length,
+        data: list,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 7. DATA GAJI
+    if (rawTarget === "gaji" || rawTarget === "datagaji" || rawTarget === "gajigtk" || rawTarget === "payroll") {
+      const sheet = getGajiSheet();
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) {
+        return responseJSON({ status: "success", target: "gaji", total: 0, data: [] });
+      }
+      const headers = data[0].map(h => String(h).trim());
+      const rows = data.slice(1);
+      const list = rows.map((row, index) => {
+        const obj = { rowIndex: index + 2 };
+        headers.forEach((header, colIdx) => {
+          let val = row[colIdx];
+          const strVal = val !== undefined && val !== null ? String(val).trim() : "";
+          obj[header] = strVal;
+          const hClean = String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          obj[hClean] = strVal;
+
+          if (hClean === "no") obj["no"] = Number(strVal) || (index + 1);
+          if (hClean === "nip") obj["nip"] = strVal;
+          if (hClean === "nama" || hClean === "namagtk" || hClean === "namaptk") obj["nama"] = strVal;
+          if (hClean === "bulan" || hClean === "bln" || hClean === "periode") obj["bulan"] = strVal;
+          if (hClean === "gajipokok" || hClean === "gapok") obj["gaji_pokok"] = strVal;
+          if (hClean === "jumkotor" || hClean === "jumlahkotor" || hClean === "gajikotor") obj["jum_kotor"] = strVal;
+          if (hClean === "jumbersih" || hClean === "jumlahbersih" || hClean === "gajibersih") obj["jum_bersih"] = strVal;
+        });
+        obj.id = obj.id || "GAJI-" + (obj.nip ? obj.nip : String(index + 1));
+        return obj;
+      });
+
+      return responseJSON({
+        status: "success",
+        target: "gaji",
+        total: list.length,
+        data: list,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 8. DATA USULAN PIP
+    if (rawTarget === "pip" || rawTarget === "usulanpip" || rawTarget === "datapip") {
+      const sheet = getPIPSheet();
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) {
+        return responseJSON({ status: "success", target: "pip", total: 0, data: [] });
+      }
+      const headers = data[0].map(h => String(h).trim());
+      const rows = data.slice(1);
+      const list = rows.map((row, index) => {
+        const obj = { rowIndex: index + 2, no: index + 1 };
+        headers.forEach((header, colIdx) => {
+          let val = row[colIdx];
+          const strVal = val !== undefined && val !== null ? String(val).trim() : "";
+          obj[header] = strVal;
+          const hClean = String(header).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          obj[hClean] = strVal;
+
+          if (hClean === "nisn") obj["nisn"] = strVal;
+          if (hClean === "nama" || hClean === "namamurid" || hClean === "namasiswa") obj["nama"] = strVal;
+          if (hClean === "alasanlayak" || hClean === "alasanusul" || hClean === "alasan") {
+            obj["alasan_layak"] = strVal;
+            obj["alasanLayak"] = strVal;
+          }
+        });
+        return obj;
+      });
+
+      return responseJSON({
+        status: "success",
+        target: "pip",
         total: list.length,
         data: list,
         timestamp: new Date().toISOString()
@@ -774,63 +1012,6 @@ function doPost(e) {
 
     const action = contents.action || "update";
 
-    // -2. FORWARD / RELAY NOTIFIKASI KE TELEGRAM BOT (Google Cloud to Telegram - Anti CORS & Anti Blokir ISP)
-    if (action === "sendTelegram" || action === "telegramNotify") {
-      var botToken = contents.botToken || "";
-      var chatId = contents.chatId || "";
-      var message = contents.message || contents.text || "";
-      if (!botToken || !chatId || !message) {
-        return responseJSON({ status: "error", message: "Parameter botToken, chatId, dan message wajib diisi" });
-      }
-      try {
-        var tgUrl = "https://api.telegram.org/bot" + botToken.trim() + "/sendMessage";
-        var tgPayload = {
-          chat_id: String(chatId).trim(),
-          text: message,
-          parse_mode: "HTML",
-          disable_web_page_preview: false
-        };
-        var threadId = contents.threadId || contents.message_thread_id;
-        if (threadId && String(threadId).trim()) {
-          var numThread = Number(threadId);
-          tgPayload.message_thread_id = !isNaN(numThread) ? numThread : String(threadId).trim();
-        }
-
-        var tgResp = UrlFetchApp.fetch(tgUrl, {
-          method: "post",
-          contentType: "application/json",
-          payload: JSON.stringify(tgPayload),
-          muteHttpExceptions: true
-        });
-        var tgCode = tgResp.getResponseCode();
-        var tgText = tgResp.getContentText();
-        var tgParsed = {};
-        try { tgParsed = JSON.parse(tgText); } catch(e) {}
-
-        // Jika thread tidak ditemukan di grup, otomatis coba kirim ke ruang obrolan utama (tanpa thread_id)
-        if (tgPayload.message_thread_id && (!tgParsed.ok || tgCode >= 400) && String(tgParsed.description || "").toLowerCase().indexOf("thread not found") !== -1) {
-          delete tgPayload.message_thread_id;
-          tgResp = UrlFetchApp.fetch(tgUrl, {
-            method: "post",
-            contentType: "application/json",
-            payload: JSON.stringify(tgPayload),
-            muteHttpExceptions: true
-          });
-          tgCode = tgResp.getResponseCode();
-          tgText = tgResp.getContentText();
-          try { tgParsed = JSON.parse(tgText); } catch(e) {}
-        }
-
-        if (tgCode >= 200 && tgCode < 300 && tgParsed.ok) {
-          return responseJSON({ status: "success", message: "Notifikasi Telegram berhasil dikirim via Google Apps Script", result: tgParsed });
-        } else {
-          return responseJSON({ status: "error", message: tgParsed.description || ("Telegram HTTP " + tgCode), details: tgText });
-        }
-      } catch (tgErr) {
-        return responseJSON({ status: "error", message: "Gagal memanggil Telegram API dari Apps Script: " + tgErr.message });
-      }
-    }
-
     // -1. UPLOAD BERKAS KE GOOGLE DRIVE (MUTASI KELUAR / BERKAS PENDUKUNG)
     if (action === "uploadBerkasMutasi" || action === "uploadBerkas" || action === "uploadFile" || action === "upload") {
       const folderId = contents.folderId || "1sGqbpA6uctgvOmYUwyxNP8pC5ORZUy56";
@@ -858,7 +1039,7 @@ function doPost(e) {
           }
         }
         if (oldFileUrl) {
-          const matchOld = String(oldFileUrl).match(/[-w]{25,}/);
+          const matchOld = String(oldFileUrl).match(/[-\w]{25,}/);
           if (matchOld) {
             try {
               const oldFile = DriveApp.getFileById(matchOld[0]);
@@ -929,7 +1110,7 @@ function doPost(e) {
       }
 
       if (!deleted && fileUrl) {
-        const match = String(fileUrl).match(/[-w]{25,}/);
+        const match = String(fileUrl).match(/[-\w]{25,}/);
         if (match) {
           try {
             DriveApp.getFileById(match[0]).setTrashed(true);
@@ -960,7 +1141,54 @@ function doPost(e) {
       });
     }
 
-    const targetType = contents.target || (contents.mutasi_masuk || contents.mutasimasuk || contents.mutasi ? "mutasi_masuk" : (contents.mutasi_keluar || contents.mutasikeluar ? "mutasi_keluar" : (contents.gtk ? "gtk" : (contents.naikpangkat ? "naikpangkat" : (contents.kgb ? "kgb" : "data")))));
+    const targetType = contents.target || (contents.pip || contents.usulanpip ? "pip" : (contents.gaji || contents.datagaji ? "gaji" : (contents.mutasi_masuk || contents.mutasimasuk || contents.mutasi ? "mutasi_masuk" : (contents.mutasi_keluar || contents.mutasikeluar ? "mutasi_keluar" : (contents.gtk ? "gtk" : (contents.naikpangkat ? "naikpangkat" : (contents.kgb ? "kgb" : "data")))))));
+
+    // TARGET: PIP (Usulan PIP)
+    if (targetType === "pip" || action === "savePIP" || action === "updatePIP") {
+      const sheet = getPIPSheet();
+      const targetNisn = String(contents.nisn || "").trim();
+      const targetNama = String(contents.nama || "").trim().toLowerCase();
+      const alasanLayak = String(contents.alasan_layak || contents.alasan_usul || contents.alasanLayak || "").trim();
+      
+      const values = sheet.getDataRange().getValues();
+      let headerRow = values[0] ? values[0].map(h => String(h).trim()) : ["NISN", "Nama_Murid", "alasan_layak"];
+      let nisnCol = 0;
+      let namaCol = 1;
+      let alasanCol = 2;
+
+      headerRow.forEach((h, idx) => {
+        const hClean = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (hClean.includes('nisn')) nisnCol = idx;
+        if (hClean.includes('nama') || hClean.includes('murid')) namaCol = idx;
+        if (hClean.includes('alasan') || hClean.includes('layak') || hClean.includes('usul')) alasanCol = idx;
+      });
+
+      let foundRowIndex = -1;
+      for (let r = 1; r < values.length; r++) {
+        const rNisn = String(values[r][nisnCol] || "").trim();
+        const rNama = String(values[r][namaCol] || "").trim().toLowerCase();
+        if ((targetNisn && rNisn === targetNisn) || (targetNama && rNama === targetNama)) {
+          foundRowIndex = r + 1; // 1-indexed in sheet
+          break;
+        }
+      }
+
+      if (foundRowIndex > 0) {
+        sheet.getRange(foundRowIndex, alasanCol + 1).setValue(alasanLayak);
+      } else {
+        const newRow = [];
+        newRow[nisnCol] = targetNisn;
+        newRow[namaCol] = contents.nama || "";
+        newRow[alasanCol] = alasanLayak;
+        sheet.appendRow(newRow);
+      }
+
+      return responseJSON({
+        status: "success",
+        message: "Alasan layak PIP berhasil disimpan ke sheet pip",
+        data: { nisn: targetNisn, nama: contents.nama, alasan_layak: alasanLayak }
+      });
+    }
 
     // 0. TARGET: MUTASI_MASUK
     if (targetType === "mutasi_masuk" || targetType === "mutasimasuk" || targetType === "mutasi") {
@@ -969,7 +1197,7 @@ function doPost(e) {
       const headers = data[0].map(h => String(h).trim());
 
       // Sync All / Import All
-      if (action === "syncAll" || action === "importAll" || action === "saveAll") {
+      if (action === "syncAll" || action === "importAll" || action === "saveAll" || action === "syncAllMutasiMasuk") {
         const items = contents.items || contents.data || contents.mutasi_masuk || [];
         if (items.length > 0) {
           const rowsToWrite = items.map((m, idx) => {
@@ -989,6 +1217,7 @@ function doPost(e) {
                 var rawDate = m.tglMasuk || m.tgl_masuk || m.tanggalPengajuan || m.timestamp || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Makassar", "dd/MM/yyyy");
                 return formatToDDMMYYYY(rawDate);
               }
+              if (hClean === "vervaloleh" || hClean === "verval") return String(m.verval_oleh || m.vervalOleh || "");
               return String(m[h] || m[hClean] || "");
             });
           });
@@ -1001,6 +1230,17 @@ function doPost(e) {
           const targetRange = sheet.getRange(2, 1, rowsToWrite.length, headers.length);
           targetRange.setNumberFormat("@");
           targetRange.setValues(rowsToWrite);
+
+          // Otomatis update status siswa di sheet data jika mutasi masuk Diterima
+          items.forEach(function(m) {
+            if (String(m.status || "").toLowerCase() === "diterima") {
+              var tNisn = String(m.nisn || m.NISN || "").trim();
+              var tNama = String(m.nama || m.nama_siswa || "").trim();
+              var tVerval = String(m.verval_oleh || m.vervalOleh || "").trim();
+              updateStudentStatusInSheet(tNisn, "", "Aktif", "Pindahan", tNama, tVerval);
+            }
+          });
+
           return responseJSON({ status: "success", message: "Berhasil sinkronisasi " + rowsToWrite.length + " data Mutasi Masuk!" });
         }
       }
@@ -1061,8 +1301,17 @@ function doPost(e) {
           var rawDate = mItem.tglMasuk || mItem.tgl_masuk || mItem.tanggalPengajuan || mItem.timestamp || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Makassar", "dd/MM/yyyy");
           return formatToDDMMYYYY(rawDate);
         }
+        if (hClean === "vervaloleh" || hClean === "verval") return String(mItem.verval_oleh || mItem.vervalOleh || "");
         return String(mItem[h] || mItem[hClean] || "");
       });
+
+      // Otomatis update status siswa di sheet data jika mutasi masuk Diterima
+      if (String(mItem.status || "").toLowerCase() === "diterima") {
+        var tNisn = String(mItem.nisn || mItem.NISN || "").trim();
+        var tNama = String(mItem.nama || mItem.nama_siswa || "").trim();
+        var tVerval = String(mItem.verval_oleh || mItem.vervalOleh || "").trim();
+        updateStudentStatusInSheet(tNisn, "", "Aktif", "Pindahan", tNama, tVerval);
+      }
 
       if (foundRow > 1) {
         const cellRange = sheet.getRange(foundRow, 1, 1, headers.length);
@@ -1105,6 +1354,7 @@ function doPost(e) {
               if (hClean === "uploadberkas" || hClean === "berkas" || hClean === "file") return String(m.uploadBerkas || m.upload_berkas || "");
               if (hClean === "status") return String(m.status || "Selesai");
               if (hClean === "timestamp") return String(m.timestamp || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Makassar", "dd/MM/yyyy HH:mm:ss"));
+              if (hClean === "vervaloleh" || hClean === "verval") return String(m.verval_oleh || m.vervalOleh || "");
               return String(m[h] || m[hClean] || "");
             });
           });
@@ -1123,7 +1373,8 @@ function doPost(e) {
             var tNisn = String(m.nisn || m.NISN || "").trim();
             var tNipd = String(m.nipd || m.NIPD || "").trim();
             var tKet = String(m.ketMutasi || m.ket_mutasi || m.ket || "Mutasi").trim();
-            updateStudentStatusInSheet(tNisn, tNipd, "Tidak Aktif", tKet);
+            var tVerval = String(m.verval_oleh || m.vervalOleh || "").trim();
+            updateStudentStatusInSheet(tNisn, tNipd, "Tidak Aktif", tKet, "", tVerval);
           });
 
           return responseJSON({ status: "success", message: "Berhasil sinkronisasi " + rowsToWrite.length + " data Mutasi Keluar!" });
@@ -1151,7 +1402,7 @@ function doPost(e) {
 
           // Hapus berkas dari Google Drive jika ada tautannya
           if (fUrl) {
-            const m = String(fUrl).match(/[-w]{25,}/);
+            const m = String(fUrl).match(/[-\w]{25,}/);
             if (m) {
               try {
                 DriveApp.getFileById(m[0]).setTrashed(true);
@@ -1173,7 +1424,7 @@ function doPost(e) {
                 // Jika fUrl kosong di parameter, ambil dari isi sheet
                 if (!fUrl && berkasColIdx >= 0) {
                   const sheetFUrl = String(data[i][berkasColIdx] || "");
-                  const m2 = sheetFUrl.match(/[-w]{25,}/);
+                  const m2 = sheetFUrl.match(/[-\w]{25,}/);
                   if (m2) {
                     try {
                       DriveApp.getFileById(m2[0]).setTrashed(true);
@@ -1239,7 +1490,7 @@ function doPost(e) {
         // Hapus file terkait dari Google Drive jika ada
         let driveDeleted = false;
         if (fileToDelete) {
-          const match = String(fileToDelete).match(/[-w]{25,}/);
+          const match = String(fileToDelete).match(/[-\w]{25,}/);
           if (match) {
             try {
               DriveApp.getFileById(match[0]).setTrashed(true);
@@ -1299,13 +1550,15 @@ function doPost(e) {
         if (hClean === "uploadberkas" || hClean === "berkas" || hClean === "file") return String(mItem.uploadBerkas || mItem.upload_berkas || "");
         if (hClean === "status") return String(mItem.status || "Selesai");
         if (hClean === "timestamp") return String(mItem.timestamp || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Makassar", "dd/MM/yyyy HH:mm:ss"));
+        if (hClean === "vervaloleh" || hClean === "verval") return String(mItem.verval_oleh || mItem.vervalOleh || "");
         return String(mItem[h] || mItem[hClean] || "");
       });
 
       // Otomatis update status siswa di sheet data menjadi "Tidak Aktif" dan ket diisi sesuai input form mutasi keluar (Mutasi / Mengundurkan Diri)
       const ketValue = String(mItem.ketMutasi || mItem.ket_mutasi || mItem.ket || "Mutasi").trim();
       const targetNama = String(mItem.nama || mItem.nama_siswa || "").trim();
-      updateStudentStatusInSheet(targetNisn, targetNipd, "Tidak Aktif", ketValue, targetNama);
+      const vervalValue = String(mItem.verval_oleh || mItem.vervalOleh || "").trim();
+      updateStudentStatusInSheet(targetNisn, targetNipd, "Tidak Aktif", ketValue, targetNama, vervalValue);
 
       if (foundRow > 1) {
         const cellRange = sheet.getRange(foundRow, 1, 1, headers.length);
@@ -1318,6 +1571,84 @@ function doPost(e) {
         cellRange.setNumberFormat("@");
         cellRange.setValues([rowValues]);
         return responseJSON({ status: "success", message: "Data mutasi keluar baru berhasil ditambahkan" });
+      }
+    }
+
+    // 0C. TARGET: GAJI
+    if (targetType === "gaji" || targetType === "datagaji" || targetType === "gajigtk" || targetType === "payroll") {
+      const sheet = getGajiSheet();
+      const data = sheet.getDataRange().getValues();
+      const headers = data[0].map(h => String(h).trim());
+
+      // Sync All / Import All
+      if (action === "syncAll" || action === "importAll" || action === "saveAll" || action === "syncAllGaji") {
+        const items = contents.items || contents.data || contents.gaji || [];
+        if (items.length > 0) {
+          const rowsToWrite = items.map((g, idx) => {
+            return headers.map(h => {
+              const hClean = String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (hClean === "no") return String(g.no || (idx + 1));
+              if (hClean === "nip") return String(g.nip || "");
+              if (hClean === "nama" || hClean === "namagtk" || hClean === "namaptk") return String(g.nama || "");
+              if (hClean === "bulan" || hClean === "bln" || hClean === "periode") return String(g.bulan || g.Bulan || "");
+              if (hClean === "gajipokok" || hClean === "gapok") return String(g.gaji_pokok || g.gajiPokok || "");
+              if (hClean === "jumkotor" || hClean === "jumlahkotor" || hClean === "gajikotor") return String(g.jum_kotor || g.jumKotor || "");
+              if (hClean === "jumbersih" || hClean === "jumlahbersih" || hClean === "gajibersih") return String(g.jum_bersih || g.jumBersih || "");
+              return String(g[h] || g[hClean] || "");
+            });
+          });
+
+          const neededRows = rowsToWrite.length + 1;
+          const maxRows = sheet.getMaxRows();
+          if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 10);
+          if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+
+          const targetRange = sheet.getRange(2, 1, rowsToWrite.length, headers.length);
+          targetRange.setNumberFormat("@");
+          targetRange.setValues(rowsToWrite);
+          return responseJSON({ status: "success", message: "Berhasil sinkronisasi " + rowsToWrite.length + " data Gaji!" });
+        }
+      }
+
+      // Single Add / Update
+      const gItem = contents.item || contents.data || contents;
+      const targetNip = String(gItem.nip || gItem.NIP || "").replace(/[\s.-]/g, '').trim();
+      let foundRow = -1;
+
+      const nipColIdx = headers.findIndex(h => h.toLowerCase().trim() === 'nip');
+      const colToSearch = nipColIdx >= 0 ? nipColIdx : 1;
+
+      for (let i = 1; i < data.length; i++) {
+        const rNip = String(data[i][colToSearch] || "").replace(/[\s.-]/g, '').trim();
+        if (targetNip && rNip === targetNip) {
+          foundRow = i + 1;
+          break;
+        }
+      }
+
+      const rowValues = headers.map(h => {
+        const hClean = String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (hClean === "no") return String(gItem.no || (foundRow > 1 ? data[foundRow - 1][0] : sheet.getLastRow()));
+        if (hClean === "nip") return String(gItem.nip || "");
+        if (hClean === "nama" || hClean === "namagtk" || hClean === "namaptk") return String(gItem.nama || "");
+        if (hClean === "bulan" || hClean === "bln" || hClean === "periode") return String(gItem.bulan || gItem.Bulan || "");
+        if (hClean === "gajipokok" || hClean === "gapok") return String(gItem.gaji_pokok || gItem.gajiPokok || "");
+        if (hClean === "jumkotor" || hClean === "jumlahkotor" || hClean === "gajikotor") return String(gItem.jum_kotor || gItem.jumKotor || "");
+        if (hClean === "jumbersih" || hClean === "jumlahbersih" || hClean === "gajibersih") return String(gItem.jum_bersih || gItem.jumBersih || "");
+        return String(gItem[h] || gItem[hClean] || "");
+      });
+
+      if (foundRow > 1) {
+        const cellRange = sheet.getRange(foundRow, 1, 1, headers.length);
+        cellRange.setNumberFormat("@");
+        cellRange.setValues([rowValues]);
+        return responseJSON({ status: "success", message: "Data gaji berhasil diperbarui", row: foundRow });
+      } else {
+        const newRowIdx = sheet.getLastRow() + 1;
+        const cellRange = sheet.getRange(newRowIdx, 1, 1, headers.length);
+        cellRange.setNumberFormat("@");
+        cellRange.setValues([rowValues]);
+        return responseJSON({ status: "success", message: "Data gaji baru berhasil ditambahkan" });
       }
     }
 

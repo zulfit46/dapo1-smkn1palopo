@@ -23,11 +23,14 @@ import { RegistrasiView } from './components/RegistrasiView';
 import { DataPeriodikView } from './components/DataPeriodikView';
 import { AbsenView } from './components/AbsenView';
 import { MutasiView } from './components/MutasiView';
+import { PIPView } from './components/PIPView';
 import { SuratView } from './components/SuratView';
 import { GTKBiodataView } from './components/GTKBiodataView';
 import { GTKPangkatView } from './components/GTKPangkatView';
 import { GTKKGBView } from './components/GTKKGBView';
+import { GTKGajiView } from './components/GTKGajiView';
 import { PembelajaranView } from './components/PembelajaranView';
+import { GTKTugasTambahanView } from './components/GTKTugasTambahanView';
 import { RekapPDView } from './components/RekapPDView';
 import { RekapGTKView } from './components/RekapGTKView';
 import { AksesMenuView } from './components/AksesMenuView';
@@ -746,6 +749,15 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'pip' && (
+            <PIPView
+              students={students}
+              appConfig={appConfig}
+              currentUser={currentUser}
+              waliKelasList={waliKelasList}
+            />
+          )}
+
           {(activeTab === 'surat' || activeTab === 'surat-pindah' || activeTab === 'surat-ket-siswa') && (
             <SuratView
               students={students}
@@ -776,10 +788,32 @@ export default function App() {
             <GTKKGBView gtkList={gtkList} appConfig={appConfig} currentUser={currentUser} />
           )}
 
+          {(activeTab === 'gtk-gaji' || activeTab === 'gaji') && (
+            <GTKGajiView
+              gtkList={gtkList}
+              appConfig={appConfig}
+              currentUser={currentUser}
+              theme={theme}
+            />
+          )}
+
           {(activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran') && (
             <PembelajaranView
               pembelajaranList={pembelajaranList}
               gtkList={gtkList}
+              currentUser={currentUser}
+              waliKelasList={waliKelasList}
+              theme={theme}
+              appConfig={appConfig}
+              onRefresh={() => fetchStudentsData(true)}
+              isRefreshing={isRefreshing}
+            />
+          )}
+
+          {(activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan') && (
+            <GTKTugasTambahanView
+              gtkList={gtkList}
+              waliKelasList={waliKelasList}
               currentUser={currentUser}
               theme={theme}
               appConfig={appConfig}

@@ -373,6 +373,34 @@ export interface PembelajaranData {
   [key: string]: any;
 }
 
+export interface GajiData {
+  id?: string;
+  no?: string | number;
+  nip: string;
+  nama?: string;
+  bulan?: string;
+  status?: string;
+  gaji_pokok?: number | string;
+  gajiPokok?: number | string;
+  jum_kotor?: number | string;
+  jumKotor?: number | string;
+  jum_bersih?: number | string;
+  jumBersih?: number | string;
+  rowIndex?: number;
+  [key: string]: any;
+}
+
+export interface PIPData {
+  rowIndex?: number;
+  no?: number;
+  nisn: string;
+  nama: string;
+  rombel?: string;
+  alasan_layak?: string;
+  alasanLayak?: string;
+  [key: string]: any;
+}
+
 export type ActiveTab = 
   | 'dashboard' 
   | 'gtk' 
@@ -380,6 +408,10 @@ export type ActiveTab =
   | 'gtk-pangkat' 
   | 'gtk-kgb' 
   | 'gtk-pembelajaran'
+  | 'gtk-tugas-tambahan'
+  | 'tugas-tambahan'
+  | 'gtk-gaji'
+  | 'gaji'
   | 'pembelajaran'
   | 'akses-menu'
   | 'biodata' 
@@ -388,6 +420,7 @@ export type ActiveTab =
   | 'data-periodik' 
   | 'absen' 
   | 'mutasi'
+  | 'pip'
   | 'surat'
   | 'surat-pindah'
   | 'surat-ket-siswa'

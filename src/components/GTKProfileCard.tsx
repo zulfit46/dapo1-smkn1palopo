@@ -16,6 +16,7 @@ import {
 import { GTKData, PembelajaranData } from '../types';
 import { normalizeNip } from '../utils/authUtils';
 import { safeGetItem } from '../utils/storage';
+import { normalizeRawTugasString } from '../utils/tugasTambahanUtils';
 
 interface GTKProfileCardProps {
   gtk: GTKData;
@@ -91,13 +92,7 @@ export const GTKProfileCard: React.FC<GTKProfileCardProps> = ({
 
   // Daftar tugas tambahan untuk format list sederhana (angka 1, 2, ...)
   const tugasTambahanList = useMemo(() => {
-    const raw = (gtk.tugasTambahan || '').trim();
-    if (!raw || raw === '-') return [];
-    const items = raw
-      .split(/[,;\n]+/)
-      .map(s => s.trim())
-      .filter(Boolean);
-    return items.length > 0 ? items : [raw];
+    return normalizeRawTugasString(gtk.tugasTambahan || '');
   }, [gtk.tugasTambahan]);
 
   return (

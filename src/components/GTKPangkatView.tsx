@@ -1168,8 +1168,12 @@ export const GTKPangkatView: React.FC<GTKPangkatViewProps> = ({
                     min={0}
                     max={50}
                     required
-                    value={formData.masaKerjaThn}
-                    onChange={(e) => setFormData({ ...formData, masaKerjaThn: parseInt(e.target.value) || 0 })}
+                    placeholder="0"
+                    value={formData.masaKerjaThn === 0 && !editingId ? '' : (formData.masaKerjaThn ?? '')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData({ ...formData, masaKerjaThn: val === '' ? ('' as any) : (parseInt(val) || 0) });
+                    }}
                     className="w-full px-3 py-2 bg-white rounded-lg border border-slate-300 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">Tahun</span>
@@ -1187,8 +1191,12 @@ export const GTKPangkatView: React.FC<GTKPangkatViewProps> = ({
                     min={0}
                     max={11}
                     required
-                    value={formData.masaKerjaBln}
-                    onChange={(e) => setFormData({ ...formData, masaKerjaBln: parseInt(e.target.value) || 0 })}
+                    placeholder="0"
+                    value={formData.masaKerjaBln === 0 && !editingId ? '' : (formData.masaKerjaBln ?? '')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData({ ...formData, masaKerjaBln: val === '' ? ('' as any) : (parseInt(val) || 0) });
+                    }}
                     className="w-full px-3 py-2 bg-white rounded-lg border border-slate-300 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">Bulan</span>

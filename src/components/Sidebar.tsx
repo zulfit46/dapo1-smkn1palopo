@@ -20,12 +20,14 @@ import {
   Sparkles,
   Award,
   CreditCard,
+  Banknote,
   LogOut,
   User,
   Palette,
   KeyRound,
   ArrowLeftRight,
   BookOpen,
+  Briefcase,
   FileCheck
 } from 'lucide-react';
 
@@ -60,8 +62,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   // Accordion state: hanya satu grup menu yang terbuka pada satu waktu
   const [openMenu, setOpenMenu] = useState<'gtk' | 'peserta-didik' | 'rekap' | null>(() => {
-    if (activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'akses-menu') return 'gtk';
-    if (activeTab === 'biodata' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'mutasi' || activeTab === 'absen-pd') return 'peserta-didik';
+    if (activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-gaji' || activeTab === 'gaji' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan' || activeTab === 'akses-menu') return 'gtk';
+    if (activeTab === 'biodata' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'mutasi' || activeTab === 'pip' || activeTab === 'surat' || activeTab === 'absen-pd') return 'peserta-didik';
     if (activeTab === 'rekap' || activeTab === 'rekap-pd' || activeTab === 'rekap-gtk') return 'rekap';
     return null;
   });
@@ -83,8 +85,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsMobileOpen(false);
   };
 
-  const isGTKActive = activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'akses-menu';
-  const isPesertaDidikActive = activeTab === 'biodata' || activeTab === 'absen-pd' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'mutasi' || activeTab === 'surat' || activeTab === 'surat-pindah' || activeTab === 'surat-ket-siswa';
+  const isGTKActive = activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-gaji' || activeTab === 'gaji' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan' || activeTab === 'akses-menu';
+  const isPesertaDidikActive = activeTab === 'biodata' || activeTab === 'absen-pd' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'mutasi' || activeTab === 'pip' || activeTab === 'surat' || activeTab === 'surat-pindah' || activeTab === 'surat-ket-siswa';
   const isRekapActive = activeTab === 'rekap' || activeTab === 'rekap-pd' || activeTab === 'rekap-gtk';
   const isUser = isUserRole(currentUser);
   const userWali = getWaliKelasForUser(currentUser, waliKelasList);
@@ -278,6 +280,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                   )}
 
+                  {/* Submenu: Gaji GTK */}
+                  {isTabPermitted('gtk-gaji', currentUser, waliKelasList) && (
+                    <button
+                      onClick={() => handleNavClick('gtk-gaji')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        activeTab === 'gtk-gaji' || activeTab === 'gaji'
+                          ? isGlass
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                            : 'bg-emerald-600 text-white shadow-xs'
+                          : isGlass
+                            ? 'text-purple-300/70 hover:bg-white/10 hover:text-white'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Banknote className="w-3.5 h-3.5" />
+                        <span>Gaji</span>
+                      </div>
+                      {(activeTab === 'gtk-gaji' || activeTab === 'gaji') && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                      )}
+                    </button>
+                  )}
+
                   {/* Submenu: Pembelajaran GTK */}
                   {isTabPermitted('gtk-pembelajaran', currentUser, waliKelasList) && (
                     <button
@@ -297,6 +323,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span>Pembelajaran</span>
                       </div>
                       {(activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran') && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                      )}
+                    </button>
+                  )}
+
+                  {/* Submenu: Tugas Tambahan GTK */}
+                  {isTabPermitted('gtk-tugas-tambahan', currentUser, waliKelasList) && (
+                    <button
+                      onClick={() => handleNavClick('gtk-tugas-tambahan')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan'
+                          ? isGlass
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                            : 'bg-emerald-600 text-white shadow-xs'
+                          : isGlass
+                            ? 'text-purple-300/70 hover:bg-white/10 hover:text-white'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="w-3.5 h-3.5" />
+                        <span>Tugas Tambahan</span>
+                      </div>
+                      {(activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan') && (
                         <span className="w-1.5 h-1.5 rounded-full bg-white" />
                       )}
                     </button>
@@ -501,6 +551,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="truncate">Mutasi</span>
                       </div>
                       {activeTab === 'mutasi' && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                      )}
+                    </button>
+                  )}
+
+                  {/* Submenu: Usulan PIP */}
+                  {isTabPermitted('pip', currentUser, waliKelasList) && (
+                    <button
+                      onClick={() => handleNavClick('pip')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        activeTab === 'pip'
+                          ? isGlass
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                            : 'bg-indigo-600 text-white shadow-xs'
+                          : isGlass
+                            ? 'text-purple-300/70 hover:bg-white/10 hover:text-white'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <GraduationCap className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
+                        <span className="truncate">Usulan PIP</span>
+                      </div>
+                      {activeTab === 'pip' && (
                         <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
                       )}
                     </button>
