@@ -135,14 +135,10 @@ export const PIPView: React.FC<PIPViewProps> = ({
       .catch(() => {});
   }, []);
 
-  // Hitung jumlah usulan yang sudah terisi dan sisa kuota yang bisa diusulkan
+  // Hitung jumlah usulan yang sudah terisi
   const totalTerusul = useMemo(() => {
     return pipList.filter(item => Boolean((item.alasan_layak || item.alasanLayak || '').trim())).length;
   }, [pipList]);
-
-  const sisaKuota = Math.max(0, kuota - totalTerusul);
-  const isKuotaFull = totalTerusul >= kuota;
-  const persentaseKuota = kuota > 0 ? Math.min(100, Math.round((totalTerusul / kuota) * 100)) : 100;
 
   // Toggle satu target sasaran (multi-select)
   const handleToggleSasaran = (tingkat: string) => {
@@ -289,8 +285,6 @@ export const PIPView: React.FC<PIPViewProps> = ({
     if (!isAlreadyProposed) {
       if (isOutsideTarget) {
         showToast(`Perhatian: Siswa berada di ${getRombel(item)} (Kelas ${studentTingkat}), di luar target sasaran aktif.`);
-      } else if (isKuotaFull) {
-        showToast(`Kuota usulan PIP (${kuota} siswa) telah tercapai! Tidak dapat menambah usulan baru.`);
       }
     }
 
@@ -331,11 +325,6 @@ export const PIPView: React.FC<PIPViewProps> = ({
       return;
     }
 
-    if (!wasAlreadyProposed && isKuotaFull) {
-      alert(`Kuota usulan PIP (${kuota} siswa) telah tercapai. Anda tidak dapat menambah usulan baru sebelum kuota ditambah atau usulan siswa lain dibatalkan.`);
-      return;
-    }
-
     setIsSaving(true);
     const targetNisn = selectedStudent.nisn;
     const targetNama = selectedStudent.nama;
@@ -359,17 +348,12 @@ export const PIPView: React.FC<PIPViewProps> = ({
 
     // 2. Kirim update ke backend server & Google Sheets (sheet: "pip")
     try {
-      const res = await savePIPDirectly(appConfig.webAppUrl, {
+      await savePIPDirectly(appConfig.webAppUrl, {
         nisn: targetNisn,
         nama: targetNama,
         alasan_layak: finalReason,
         rowIndex: selectedStudent.rowIndex
       });
-      if (res && !res.success && res.message?.includes('Kuota')) {
-        alert(res.message);
-        loadPIPData();
-        return;
-      }
       showToast(`Alasan layak untuk "${targetNama}" berhasil disimpan.`);
     } catch (err: any) {
       console.warn('Gagal menyimpan ke Google Sheets:', err);
@@ -707,90 +691,35 @@ export const PIPView: React.FC<PIPViewProps> = ({
         </div>
       </div>
 
-      {/* Kuota & Target Sasaran Usulan PIP Bar */}
-      <div className={`p-4 lg:p-5 rounded-2xl border transition-all ${
-        isKuotaFull 
-          ? 'bg-rose-50/70 border-rose-200' 
-          : sisaKuota <= 5 && sisaKuota > 0
-            ? 'bg-amber-50/70 border-amber-200'
-            : 'bg-white border-slate-200 shadow-xs'
-      }`}>
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className={`p-2.5 rounded-xl shrink-0 ${
-              isKuotaFull ? 'bg-rose-100 text-rose-700' : sisaKuota <= 5 && sisaKuota > 0 ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-700'
-            }`}>
-              {isKuotaFull ? <Lock className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+      {/* Kuota & Target Sasaran Usulan PIP Bar - Simplified */}
+      <div className="bg-white border border-slate-200 shadow-xs rounded-2xl p-4 lg:p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl">
+              <Users className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Status Kuota Usulan PIP</span>
-                {isKuotaFull ? (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-600 text-white animate-pulse">Kuota Penuh</span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">Sisa {sisaKuota} Siswa</span>
-                )}
-              </div>
-              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mt-1">
-                <div className="text-xs sm:text-sm">
-                  <span className="text-slate-500 text-xs">Total Kuota: </span>
-                  <span className="font-bold text-slate-800">{kuota} Siswa</span>
-                </div>
-                <span className="text-slate-300 hidden sm:inline">&bull;</span>
-                <div className="text-xs sm:text-sm">
-                  <span className="text-slate-500 text-xs">Sudah Diusulkan: </span>
-                  <span className="font-bold text-indigo-700">{totalTerusul} Siswa</span>
-                </div>
-                <span className="text-slate-300 hidden sm:inline">&bull;</span>
-                <div className="text-xs sm:text-sm">
-                  <span className="text-slate-500 text-xs">Sisa Kuota: </span>
-                  <span className={`font-bold ${isKuotaFull ? 'text-rose-600' : sisaKuota <= 5 ? 'text-amber-600' : 'text-emerald-700'}`}>
-                    {sisaKuota} Siswa
-                  </span>
-                </div>
-              </div>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Status Kuota Usulan PIP
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
-            <div className="flex-1 lg:w-44 space-y-1">
-              <div className="flex items-center justify-between text-[11px] text-slate-500">
-                <span>Keterisian Kuota</span>
-                <span className="font-semibold text-slate-700">{persentaseKuota}%</span>
-              </div>
-              <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-300 rounded-full ${isKuotaFull ? 'bg-rose-500' : sisaKuota <= 5 ? 'bg-amber-500' : 'bg-indigo-600'}`}
-                  style={{ width: `${persentaseKuota}%` }}
-                />
-              </div>
-            </div>
-
-            {isAdmin && (
-              <button
-                onClick={() => {
-                  setTempKuota(String(kuota));
-                  setTempTargetSasaran([...targetSasaran]);
-                  setIsEditingKuota(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 hover:border-indigo-400 bg-white hover:bg-slate-50 text-slate-700 hover:text-indigo-600 rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer shrink-0"
-                title="Atur kuota dan target sasaran tingkat kelas"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>Atur Kuota & Sasaran</span>
-              </button>
-            )}
-          </div>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setTempKuota(String(kuota));
+                setTempTargetSasaran([...targetSasaran]);
+                setIsEditingKuota(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 hover:border-indigo-400 bg-white hover:bg-slate-50 text-slate-700 hover:text-indigo-600 rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer shrink-0"
+              title="Atur kuota dan target sasaran tingkat kelas"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>Atur Kuota & Sasaran</span>
+            </button>
+          )}
         </div>
-
-        {isKuotaFull && (
-          <div className="mt-3 pt-3 border-t border-rose-200/80 flex items-start gap-2 text-xs text-rose-800">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <p>
-              <strong>Kuota maksimal telah tercapai ({kuota} siswa).</strong> Pengusulan siswa baru dinonaktifkan (Sisa kuota: 0 siswa). Anda masih dapat mengedit atau membatalkan usulan siswa yang telah terdaftar{isAdmin ? ', atau klik "Atur Kuota & Sasaran" jika kuota bertambah.' : '.'}
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Clean Grid Table */}
@@ -1009,20 +938,6 @@ export const PIPView: React.FC<PIPViewProps> = ({
                   );
                 }
 
-                if (!isAlreadyProposed && isKuotaFull) {
-                  return (
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-xs text-rose-800 mb-3">
-                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-bold">Kuota Usulan PIP Telah Tercapai ({kuota} Siswa)</span>
-                        <p className="mt-0.5 text-rose-700">
-                          Sisa kuota: 0 siswa. Anda tidak dapat menambahkan usulan baru.
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-
                 return (
                   <p className="text-slate-600 font-medium mb-3">
                     Silakan pilih <strong>minimal 1</strong> alasan pengusulan layak PIP yang sesuai (bisa lebih dari satu):
@@ -1092,9 +1007,8 @@ export const PIPView: React.FC<PIPViewProps> = ({
                   const studentTingkat = getTingkatKelas(getRombel(selectedStudent));
                   const isOutsideTarget = studentTingkat !== 'lainnya' && !targetSasaran.includes(studentTingkat);
                   const isAlreadyProposed = Boolean((selectedStudent.alasan_layak || selectedStudent.alasanLayak || '').trim());
-                  const cannotSaveDueToQuota = !isAlreadyProposed && isKuotaFull;
                   const cannotSaveDueToTarget = !isAlreadyProposed && isOutsideTarget;
-                  const isBtnDisabled = isSaving || selectedReasons.length === 0 || cannotSaveDueToQuota || cannotSaveDueToTarget;
+                  const isBtnDisabled = isSaving || selectedReasons.length === 0 || cannotSaveDueToTarget;
 
                   return (
                     <button
@@ -1111,8 +1025,6 @@ export const PIPView: React.FC<PIPViewProps> = ({
                         <><RefreshCw className="w-3.5 h-3.5 animate-spin" /><span>Menyimpan...</span></>
                       ) : cannotSaveDueToTarget ? (
                         <><Lock className="w-3.5 h-3.5" /><span>Di Luar Sasaran</span></>
-                      ) : cannotSaveDueToQuota ? (
-                        <><Lock className="w-3.5 h-3.5" /><span>Kuota Penuh</span></>
                       ) : (
                         <><Check className="w-3.5 h-3.5" /><span>Simpan ({selectedReasons.length} dipilih)</span></>
                       )}
