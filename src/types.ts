@@ -390,6 +390,8 @@ export interface GajiData {
   [key: string]: any;
 }
 
+export type PIPStatus = 'Belum diusul' | 'Usulan Sekolah' | 'Usulan Luar';
+
 export interface PIPData {
   rowIndex?: number;
   no?: number;
@@ -398,6 +400,7 @@ export interface PIPData {
   rombel?: string;
   alasan_layak?: string;
   alasanLayak?: string;
+  status?: PIPStatus | string;
   [key: string]: any;
 }
 
