@@ -73,6 +73,13 @@ const OPSI_ALASAN_LAYAK = [
 // Helper normalisasi nama rombel/kelas
 const cleanClass = (str?: string) => (str || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
+// Helper normalisasi status usulan PIP (Hanya 3 pilihan valid)
+export const normalizePIPStatus = (status?: string): 'Belum diusul' | 'Usulan Sekolah' | 'Usulan Luar' => {
+  if (status === 'Usulan Sekolah') return 'Usulan Sekolah';
+  if (status === 'Usulan Luar') return 'Usulan Luar';
+  return 'Belum diusul';
+};
+
 export const PIPView: React.FC<PIPViewProps> = ({ 
   students, 
   appConfig, 
@@ -99,8 +106,9 @@ export const PIPView: React.FC<PIPViewProps> = ({
   const [filterStatus, setFilterStatus] = useState<'all' | 'filled' | 'empty'>('all');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(25);
-  const [sortField, setSortField] = useState<'default' | 'rombel' | 'nama' | 'nisn'>('default');
+  const [sortField, setSortField] = useState<'default' | 'rombel' | 'nama' | 'nisn' | 'status'>('default');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
 
   // Modal State untuk pemilihan alasan layak (Multi-select)
   const [selectedStudent, setSelectedStudent] = useState<PIPData | null>(null);
@@ -287,7 +295,8 @@ export const PIPView: React.FC<PIPViewProps> = ({
           nama: String(s.nama || '').trim(),
           rombel: String(s.kelas || '').trim(),
           alasan_layak: '',
-          alasanLayak: ''
+          alasanLayak: '',
+          status: 'Belum diusul'
         }));
         setPipList(initialFromStudents);
       }
@@ -308,6 +317,46 @@ export const PIPView: React.FC<PIPViewProps> = ({
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
+  };
+
+  // Handler ubah Status pengusulan oleh Admin (Belum diusul, Usulan Sekolah, Usulan Luar)
+  const handleStatusChange = async (student: PIPData, newStatus: string) => {
+    const studentKey = student.nisn || student.nama;
+    setSavingStatusId(studentKey);
+    const targetNisn = student.nisn;
+    const targetNama = student.nama;
+
+    // 1. Update state tabel lokal secara instan
+    const updatedList = pipList.map((item) => {
+      const isMatch = (targetNisn && item.nisn === targetNisn) ||
+                      (targetNama && item.nama.trim().toLowerCase() === targetNama.trim().toLowerCase());
+      if (isMatch) {
+        return {
+          ...item,
+          status: newStatus
+        };
+      }
+      return item;
+    });
+
+    setPipList(updatedList);
+    safeSetItem(LOCAL_STORAGE_PIP_KEY, updatedList);
+    showToast(`Status usulan untuk "${targetNama}" diubah menjadi "${newStatus}".`);
+
+    // 2. Simpan perubahan ke server backend & Google Sheets (sheet: "pip")
+    try {
+      await savePIPDirectly(appConfig.webAppUrl, {
+        nisn: targetNisn,
+        nama: targetNama,
+        alasan_layak: student.alasan_layak || student.alasanLayak || '',
+        status: newStatus,
+        rowIndex: student.rowIndex
+      });
+    } catch (err: any) {
+      console.warn('Gagal menyimpan status PIP ke Google Sheets:', err);
+    } finally {
+      setSavingStatusId(null);
+    }
   };
 
   // Buka modal saat tombol di kolom alasan layak diklik
@@ -393,6 +442,7 @@ export const PIPView: React.FC<PIPViewProps> = ({
         nisn: targetNisn,
         nama: targetNama,
         alasan_layak: finalReason,
+        status: selectedStudent.status || 'Belum diusul',
         rowIndex: selectedStudent.rowIndex
       });
       showToast(`Alasan layak untuk "${targetNama}" berhasil disimpan.`);
@@ -433,6 +483,7 @@ export const PIPView: React.FC<PIPViewProps> = ({
         nisn: targetNisn,
         nama: targetNama,
         alasan_layak: '',
+        status: selectedStudent.status || 'Belum diusul',
         rowIndex: selectedStudent.rowIndex
       });
       showToast(`Alasan layak untuk "${targetNama}" telah dikosongkan.`);
@@ -528,8 +579,9 @@ export const PIPView: React.FC<PIPViewProps> = ({
       const nisn = String(item.nisn || '').toLowerCase();
       const rombelLower = rombel.toLowerCase();
       const alasan = String(item.alasan_layak || item.alasanLayak || '').toLowerCase();
+      const statusText = String(item.status || 'Belum diusul').toLowerCase();
 
-      const matchesSearch = !q || nama.includes(q) || nisn.includes(q) || rombelLower.includes(q) || alasan.includes(q);
+      const matchesSearch = !q || nama.includes(q) || nisn.includes(q) || rombelLower.includes(q) || alasan.includes(q) || (isAdmin && statusText.includes(q));
       if (!matchesSearch) return false;
 
       const hasReason = Boolean(item.alasan_layak || item.alasanLayak);
@@ -537,10 +589,10 @@ export const PIPView: React.FC<PIPViewProps> = ({
       if (filterStatus === 'empty') return !hasReason;
       return true;
     });
-  }, [pipList, search, filterStatus, nisnToRombelMap, targetSasaran, filterOnlyTarget, isWaliKelasOnly, assignedKelas]);
+  }, [pipList, search, filterStatus, nisnToRombelMap, targetSasaran, filterOnlyTarget, isWaliKelasOnly, assignedKelas, isAdmin]);
 
   // Handler klik header kolom untuk toggle sortir
-  const handleToggleSort = (field: 'rombel' | 'nama' | 'nisn') => {
+  const handleToggleSort = (field: 'rombel' | 'nama' | 'nisn' | 'status') => {
     if (sortField === field) {
       if (sortDirection === 'asc') {
         setSortDirection('desc');
@@ -577,6 +629,13 @@ export const PIPView: React.FC<PIPViewProps> = ({
         const cmp = (a.nisn || '').localeCompare(b.nisn || '', 'id');
         return sortDirection === 'asc' ? cmp : -cmp;
       });
+    } else if (sortField === 'status') {
+      list.sort((a, b) => {
+        const sA = a.status || 'Belum diusul';
+        const sB = b.status || 'Belum diusul';
+        const cmp = sA.localeCompare(sB, 'id');
+        return sortDirection === 'asc' ? cmp : -cmp;
+      });
     }
     return list;
   }, [filteredData, sortField, sortDirection]);
@@ -597,7 +656,7 @@ export const PIPView: React.FC<PIPViewProps> = ({
     }
   };
 
-  // Download Excel
+  // Download Excel (Termasuk status untuk akun Admin)
   const handleDownloadExcel = () => {
     if (filteredData.length === 0) {
       alert('Tidak ada data untuk diekspor ke Excel.');
@@ -616,18 +675,28 @@ export const PIPView: React.FC<PIPViewProps> = ({
       return namaA.localeCompare(namaB, 'id', { sensitivity: 'base' });
     });
 
-    const exportRows = sortedData.map((item, idx) => ({
-      'No': idx + 1,
-      'NISN': item.nisn || '',
-      'Nama_Murid': item.nama || '',
-      'Rombel': getRombel(item),
-      'alasan_layak': item.alasan_layak || item.alasanLayak || ''
-    }));
+    const exportRows = sortedData.map((item, idx) => {
+      const row: any = {
+        'No': idx + 1,
+        'NISN': item.nisn || '',
+        'Nama_Murid': item.nama || '',
+        'Rombel': getRombel(item),
+        'alasan_layak': item.alasan_layak || item.alasanLayak || ''
+      };
+      if (isAdmin) {
+        row['Status'] = item.status || 'Belum diusul';
+      }
+      return row;
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(exportRows);
-    worksheet['!cols'] = [
-      { wch: 6 }, { wch: 16 }, { wch: 35 }, { wch: 18 }, { wch: 45 }
-    ];
+    worksheet['!cols'] = isAdmin
+      ? [
+          { wch: 6 }, { wch: 16 }, { wch: 35 }, { wch: 18 }, { wch: 45 }, { wch: 20 }
+        ]
+      : [
+          { wch: 6 }, { wch: 16 }, { wch: 35 }, { wch: 18 }, { wch: 45 }
+        ];
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Usulan PIP');
@@ -852,12 +921,28 @@ export const PIPView: React.FC<PIPViewProps> = ({
                   </div>
                 </th>
                 <th className="py-2.5 px-4 min-w-[260px]">Alasan Layak</th>
+                {isAdmin && (
+                  <th 
+                    onClick={() => handleToggleSort('status')}
+                    className="py-2.5 px-3 border-l border-slate-300 w-44 cursor-pointer hover:bg-slate-200/70 transition-colors select-none"
+                    title="Klik untuk menyortir Status"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span>Status</span>
+                      {sortField === 'status' ? (
+                        sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-slate-800">
               {isLoading && pipList.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-16 text-center text-slate-500">
+                  <td colSpan={isAdmin ? 6 : 5} className="py-16 text-center text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <RefreshCw className="w-5 h-5 animate-spin text-indigo-600" />
                       <span>Memuat data usulan PIP dari Google Sheets...</span>
@@ -866,7 +951,7 @@ export const PIPView: React.FC<PIPViewProps> = ({
                 </tr>
               ) : paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-14 text-center text-slate-500 italic">
+                  <td colSpan={isAdmin ? 6 : 5} className="py-14 text-center text-slate-500 italic">
                     <div className="flex flex-col items-center justify-center gap-1.5">
                       <AlertCircle className="w-6 h-6 text-slate-400" />
                       <span>Tidak ada data siswa ditemukan</span>
@@ -916,6 +1001,36 @@ export const PIPView: React.FC<PIPViewProps> = ({
                           )}
                         </button>
                       </td>
+
+                      {/* KOLOM STATUS (KHUSUS ADMIN) */}
+                      {isAdmin && (
+                        <td className="py-2.5 px-3 border-l border-slate-200 text-slate-800">
+                          {(() => {
+                            const curStatus = normalizePIPStatus(item.status);
+                            return (
+                              <div className="relative inline-block w-full min-w-[130px]">
+                                <select
+                                  value={curStatus}
+                                  onChange={(e) => handleStatusChange(item, e.target.value)}
+                                  disabled={savingStatusId === (item.nisn || item.nama)}
+                                  className={`w-full py-1 px-2.5 text-[11px] font-semibold rounded-lg border transition-all cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-indigo-500 shadow-2xs ${
+                                    curStatus === 'Usulan Sekolah'
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100/70'
+                                      : curStatus === 'Usulan Luar'
+                                      ? 'bg-sky-50 text-sky-800 border-sky-300 hover:bg-sky-100/70'
+                                      : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200/70'
+                                  }`}
+                                  title="Pilih Status Usulan PIP (Hanya Admin)"
+                                >
+                                  <option value="Belum diusul">Belum diusul</option>
+                                  <option value="Usulan Sekolah">Usulan Sekolah</option>
+                                  <option value="Usulan Luar">Usulan Luar</option>
+                                </select>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                      )}
                     </tr>
                   );
                 })
