@@ -2151,14 +2151,16 @@ async function startServer() {
                 let nisnCol = 0;
                 let namaCol = 1;
                 let alasanCol = 2;
+                let statusCol = -1;
 
                 const firstRowCells = rawRows[0]?.c?.map((c: any) => c && c.v !== null ? String(c.v).trim().toLowerCase() : '') || [];
-                const hasHeader = firstRowCells.some((c: string) => c.includes('nisn') || c.includes('nama') || c.includes('alasan') || c.includes('layak') || c.includes('usul'));
+                const hasHeader = firstRowCells.some((c: string) => c.includes('nisn') || c.includes('nama') || c.includes('alasan') || c.includes('layak') || c.includes('usul') || c.includes('status') || c === 'sts');
                 if (hasHeader) {
                   firstRowCells.forEach((c: string, idx: number) => {
                     if (c.includes('nisn')) nisnCol = idx;
                     if (c.includes('nama') || c.includes('murid')) namaCol = idx;
                     if (c.includes('alasan') || c.includes('layak') || c.includes('usul')) alasanCol = idx;
+                    if (c.includes('status') || c === 'sts') statusCol = idx;
                   });
                   headerRowIndex = 1;
                 }
@@ -2170,6 +2172,9 @@ async function startServer() {
                   const nisn = row[nisnCol]?.v !== null && row[nisnCol]?.v !== undefined ? String(row[nisnCol].v).trim() : '';
                   const nama = row[namaCol]?.v !== null && row[namaCol]?.v !== undefined ? String(row[namaCol].v).trim() : '';
                   const alasan = row[alasanCol]?.v !== null && row[alasanCol]?.v !== undefined ? String(row[alasanCol].v).trim() : '';
+                  const rawStatus = statusCol >= 0 && row[statusCol]?.v !== null && row[statusCol]?.v !== undefined ? String(row[statusCol].f || row[statusCol].v).trim() : '';
+                  const status = (rawStatus === 'Usulan Sekolah' || rawStatus === 'Usulan Luar') ? rawStatus : 'Belum diusul';
+
                   if (nisn || nama) {
                     list.push({
                       rowIndex: i + 1,
@@ -2177,7 +2182,8 @@ async function startServer() {
                       nisn,
                       nama,
                       alasan_layak: alasan,
-                      alasanLayak: alasan
+                      alasanLayak: alasan,
+                      status
                     });
                   }
                 }
@@ -2196,14 +2202,19 @@ async function startServer() {
           if (res.ok) {
             const json = await res.json();
             if (json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
-              const list = json.data.map((item: any, idx: number) => ({
-                rowIndex: item.rowIndex || idx + 2,
-                no: idx + 1,
-                nisn: item.nisn || item.NISN || '',
-                nama: item.nama || item.Nama_Murid || item.Nama || '',
-                alasan_layak: item.alasan_layak || item.alasan_usul || '',
-                alasanLayak: item.alasan_layak || item.alasan_usul || ''
-              }));
+              const list = json.data.map((item: any, idx: number) => {
+                const rawStatus = item.status || item.Status || item.status_usulan || '';
+                const status = (rawStatus === 'Usulan Sekolah' || rawStatus === 'Usulan Luar') ? rawStatus : 'Belum diusul';
+                return {
+                  rowIndex: item.rowIndex || idx + 2,
+                  no: idx + 1,
+                  nisn: item.nisn || item.NISN || '',
+                  nama: item.nama || item.Nama_Murid || item.Nama || '',
+                  alasan_layak: item.alasan_layak || item.alasan_usul || '',
+                  alasanLayak: item.alasan_layak || item.alasan_usul || '',
+                  status
+                };
+              });
               cachedPIPList = list;
               return list;
             }
@@ -2280,30 +2291,37 @@ async function startServer() {
     res.status(400).json({ status: "error", message: "Data kuota atau target sasaran tidak valid" });
   });
 
-  // POST Update Alasan Layak PIP
+  // POST Update Alasan Layak & Status PIP
   app.post("/api/pip", async (req, res) => {
-    const { nisn, nama, alasan_layak, rowIndex } = req.body;
+    const { nisn, nama, alasan_layak, status, rowIndex } = req.body;
     if (!nisn && !nama) {
       return res.status(400).json({ status: "error", message: "NISN atau Nama wajib disertakan" });
     }
 
-    const isAddingNew = Boolean(alasan_layak && String(alasan_layak).trim() !== "");
-    const currentlyFilled = cachedPIPList.filter(p => Boolean(String(p.alasan_layak || p.alasanLayak || '').trim())).length;
-    const existingEntry = cachedPIPList.find(p => (nisn && p.nisn === nisn) || (nama && String(p.nama).toLowerCase() === String(nama).toLowerCase()));
-    const wasAlreadyFilled = Boolean(existingEntry && String(existingEntry.alasan_layak || existingEntry.alasanLayak || '').trim());
+    // Cek batas kuota HANYA jika alasan_layak disertakan dan mencoba menambah usulan baru
+    if (alasan_layak !== undefined) {
+      const isAddingNew = Boolean(alasan_layak && String(alasan_layak).trim() !== "");
+      const currentlyFilled = cachedPIPList.filter(p => Boolean(String(p.alasan_layak || p.alasanLayak || '').trim())).length;
+      const existingEntry = cachedPIPList.find(p => (nisn && p.nisn === nisn) || (nama && String(p.nama).toLowerCase() === String(nama).toLowerCase()));
+      const wasAlreadyFilled = Boolean(existingEntry && String(existingEntry.alasan_layak || existingEntry.alasanLayak || '').trim());
 
-    // Cek batas kuota jika mencoba menambahkan usulan baru
-    if (isAddingNew && !wasAlreadyFilled && currentlyFilled >= cachedPIPKuota) {
-      return res.status(400).json({ 
-        status: "error", 
-        message: `Kuota usulan PIP sebanyak ${cachedPIPKuota} siswa telah tercapai. Tidak dapat menambah usulan baru.` 
-      });
+      if (isAddingNew && !wasAlreadyFilled && currentlyFilled >= cachedPIPKuota) {
+        return res.status(400).json({ 
+          status: "error", 
+          message: `Kuota usulan PIP sebanyak ${cachedPIPKuota} siswa telah tercapai. Tidak dapat menambah usulan baru.` 
+        });
+      }
     }
 
     const idx = cachedPIPList.findIndex(p => (nisn && p.nisn === nisn) || (nama && p.nama.toLowerCase() === nama.toLowerCase()));
     if (idx >= 0) {
-      cachedPIPList[idx].alasan_layak = alasan_layak;
-      cachedPIPList[idx].alasanLayak = alasan_layak;
+      if (alasan_layak !== undefined) {
+        cachedPIPList[idx].alasan_layak = alasan_layak;
+        cachedPIPList[idx].alasanLayak = alasan_layak;
+      }
+      if (status !== undefined) {
+        cachedPIPList[idx].status = status;
+      }
     } else {
       cachedPIPList.push({
         no: cachedPIPList.length + 1,
@@ -2311,6 +2329,7 @@ async function startServer() {
         nama: nama || '',
         alasan_layak: alasan_layak || '',
         alasanLayak: alasan_layak || '',
+        status: status || 'Belum diusul',
         rowIndex: rowIndex || cachedPIPList.length + 2
       });
     }
@@ -2328,6 +2347,7 @@ async function startServer() {
             nama,
             alasan_layak,
             alasan_usul: alasan_layak,
+            status,
             rowIndex
           }),
           signal: AbortSignal.timeout(15000)
@@ -2337,7 +2357,7 @@ async function startServer() {
       }
     }
 
-    res.json({ status: "success", message: "Alasan layak PIP berhasil disimpan", data: { nisn, nama, alasan_layak } });
+    res.json({ status: "success", message: "Data usulan PIP berhasil disimpan", data: { nisn, nama, alasan_layak, status } });
   });
 
   // GET Wali Kelas (Map & List)
