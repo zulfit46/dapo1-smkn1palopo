@@ -2446,15 +2446,17 @@ export async function fetchPIPDirectly(config: AppConfig): Promise<PIPData[] | n
             let nisnCol = 0;
             let namaCol = 1;
             let alasanCol = 2;
+            let statusCol = -1;
 
             const firstRowCells = rawRows[0]?.c?.map((c: any) => c && c.v !== null ? String(c.v).trim().toLowerCase() : '') || [];
-            const hasHeaderInRow0 = firstRowCells.some((c: string) => c.includes('nisn') || c.includes('nama') || c.includes('alasan') || c.includes('layak') || c.includes('usul'));
+            const hasHeaderInRow0 = firstRowCells.some((c: string) => c.includes('nisn') || c.includes('nama') || c.includes('alasan') || c.includes('layak') || c.includes('usul') || c.includes('status') || c === 'sts');
             
             if (hasHeaderInRow0) {
               firstRowCells.forEach((c: string, idx: number) => {
                 if (c.includes('nisn')) nisnCol = idx;
                 if (c.includes('nama') || c.includes('murid') || c.includes('siswa')) namaCol = idx;
                 if (c.includes('alasan') || c.includes('layak') || c.includes('usul')) alasanCol = idx;
+                if (c.includes('status') || c === 'sts') statusCol = idx;
               });
               headerRowIndex = 1;
             }
@@ -2466,6 +2468,8 @@ export async function fetchPIPDirectly(config: AppConfig): Promise<PIPData[] | n
               const nisn = row[nisnCol]?.v !== null && row[nisnCol]?.v !== undefined ? String(row[nisnCol].v).trim() : '';
               const nama = row[namaCol]?.v !== null && row[namaCol]?.v !== undefined ? String(row[namaCol].v).trim() : '';
               const alasan = row[alasanCol]?.v !== null && row[alasanCol]?.v !== undefined ? String(row[alasanCol].v).trim() : '';
+              const rawStatus = statusCol >= 0 && row[statusCol]?.v !== null && row[statusCol]?.v !== undefined ? String(row[statusCol].f || row[statusCol].v).trim() : '';
+              const status = (rawStatus === 'Usulan Sekolah' || rawStatus === 'Usulan Luar') ? rawStatus : 'Belum diusul';
 
               if (nisn || nama) {
                 list.push({
@@ -2474,7 +2478,8 @@ export async function fetchPIPDirectly(config: AppConfig): Promise<PIPData[] | n
                   nisn,
                   nama,
                   alasan_layak: alasan,
-                  alasanLayak: alasan
+                  alasanLayak: alasan,
+                  status
                 });
               }
             }
@@ -2499,14 +2504,19 @@ export async function fetchPIPDirectly(config: AppConfig): Promise<PIPData[] | n
       if (res.ok) {
         const json = await res.json();
         if (json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
-          const list: PIPData[] = json.data.map((item: any, idx: number) => ({
-            rowIndex: item.rowIndex || idx + 2,
-            no: idx + 1,
-            nisn: item.nisn || item.NISN || '',
-            nama: item.nama || item.Nama_Murid || item.Nama || '',
-            alasan_layak: item.alasan_layak || item.alasan_usul || item.alasanLayak || '',
-            alasanLayak: item.alasan_layak || item.alasan_usul || item.alasanLayak || ''
-          }));
+          const list: PIPData[] = json.data.map((item: any, idx: number) => {
+            const rawStatus = item.status || item.Status || item.status_usulan || '';
+            const status = (rawStatus === 'Usulan Sekolah' || rawStatus === 'Usulan Luar') ? rawStatus : 'Belum diusul';
+            return {
+              rowIndex: item.rowIndex || idx + 2,
+              no: idx + 1,
+              nisn: item.nisn || item.NISN || '',
+              nama: item.nama || item.Nama_Murid || item.Nama || '',
+              alasan_layak: item.alasan_layak || item.alasan_usul || item.alasanLayak || '',
+              alasanLayak: item.alasan_layak || item.alasan_usul || item.alasanLayak || '',
+              status
+            };
+          });
           safeSetItem(LOCAL_STORAGE_PIP_KEY, list);
           return list;
         }
@@ -2520,11 +2530,11 @@ export async function fetchPIPDirectly(config: AppConfig): Promise<PIPData[] | n
 }
 
 /**
- * Menyimpan data alasan layak PIP ke Google Sheets (sheet: pip) dan server
+ * Menyimpan data alasan layak PIP dan status ke Google Sheets (sheet: pip) dan server
  */
 export async function savePIPDirectly(
   webAppUrl: string,
-  pipData: { nisn: string; nama: string; alasan_layak: string; rowIndex?: number }
+  pipData: { nisn: string; nama?: string; alasan_layak?: string; status?: string; rowIndex?: number }
 ): Promise<{ success: boolean; message?: string }> {
   // 1. Coba simpan lewat backend server endpoint /api/pip
   try {
@@ -2537,7 +2547,7 @@ export async function savePIPDirectly(
     if (sRes.ok) {
       const sJson = await sRes.json().catch(() => null);
       if (sJson && sJson.status === 'success') {
-        return { success: true, message: 'Alasan layak PIP berhasil disimpan' };
+        return { success: true, message: 'Data usulan PIP berhasil disimpan' };
       }
     }
   } catch (proxyErr) {
@@ -2554,6 +2564,7 @@ export async function savePIPDirectly(
       nama: pipData.nama,
       alasan_layak: pipData.alasan_layak,
       alasan_usul: pipData.alasan_layak,
+      status: pipData.status,
       rowIndex: pipData.rowIndex
     };
     await fetch(webAppUrl, {
@@ -2563,7 +2574,7 @@ export async function savePIPDirectly(
       mode: 'no-cors',
       signal: AbortSignal.timeout(8000)
     });
-    return { success: true, message: 'Alasan layak PIP berhasil dikirim ke Google Sheets (sheet: pip)' };
+    return { success: true, message: 'Data PIP berhasil dikirim ke Google Sheets (sheet: pip)' };
   } catch (err: any) {
     return { success: false, message: err?.message || 'Gagal mengirim data ke Google Sheets' };
   }
