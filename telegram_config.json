@@ -1,0 +1,20 @@
+{
+  "botToken": "8798086610:AAHTiioEb5YqjiEU6K6YFAWdf0f-zmpyp-I",
+  "chatId": "-1004324462750",
+  "enabled": true,
+  "notifyMutasiMasuk": true,
+  "notifyMutasiKeluar": true,
+  "notifyPangkatBaru": true,
+  "notifyKGBBaru": true,
+  "notifyVervalPD": true,
+  "threadIdMutasiMasuk": "",
+  "threadIdMutasiKeluar": "",
+  "threadIdPangkat": "",
+  "threadIdKGB": "",
+  "threadIdVervalPD": "",
+  "chatIdMutasiMasuk": "",
+  "chatIdMutasiKeluar": "",
+  "chatIdPangkat": "",
+  "chatIdKGB": "",
+  "chatIdVervalPD": ""
+}

@@ -365,30 +365,33 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
       };
     });
 
-    notifyVervalPD(
-      notifItems,
-      {
-        actorName,
-        kelasName: selectedRombel !== 'Semua Rombel' ? selectedRombel : (effectiveWali?.kelas || 'Semua Rombel'),
-      },
-      undefined,
-      appConfig?.webAppUrl
-    ).then((tgRes) => {
+    let tgFeedback = '';
+    try {
+      const tgRes = await notifyVervalPD(
+        notifItems,
+        {
+          actorName,
+          kelasName: selectedRombel !== 'Semua Rombel' ? selectedRombel : (effectiveWali?.kelas || 'Semua Rombel'),
+        },
+        undefined,
+        appConfig?.webAppUrl
+      );
       if (tgRes?.success) {
+        tgFeedback = ' • Notifikasi Telegram terkirim';
         console.log('[Telegram VervalPD] Notifikasi terkirim:', tgRes.message);
       } else {
-        console.warn('[Telegram VervalPD] Notifikasi tidak terkirim:', tgRes.message);
+        console.warn('[Telegram VervalPD] Notifikasi tidak terkirim:', tgRes?.message);
       }
-    }).catch((tgErr) => {
+    } catch (tgErr) {
       console.warn('[Telegram VervalPD] Error kirim notifikasi:', tgErr);
-    });
+    }
 
     // Reset local edit states since changes are saved
     setStatusState({});
     setKetState({});
 
     setIsSaving(false);
-    setSavedSuccessMessage(`Berhasil simpan data${syncFeedback}`);
+    setSavedSuccessMessage(`Berhasil simpan data${syncFeedback}${tgFeedback}`);
     setTimeout(() => setSavedSuccessMessage(null), 4000);
   };
 

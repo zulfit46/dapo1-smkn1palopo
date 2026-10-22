@@ -70,10 +70,17 @@ export async function getTelegramConfig(): Promise<TelegramConfig> {
       const resolvedChatId = (localConfig.chatId || serverConfig.chatId || ENV_CHAT_ID || '').trim();
       const hasAnyToken = Boolean(resolvedToken && resolvedChatId);
 
-      // Jika ada bot token dan chat ID dari Vercel Environment Variables atau server, otomatis aktifkan
-      const isEnabled = localConfig.botToken
-        ? (localConfig.enabled ?? hasAnyToken)
-        : (serverConfig.hasEnvConfig || serverConfig.enabled || hasAnyToken);
+      // Pastikan status aktif: jika botToken dan chatId ada, aktifkan (kecuali secara eksplisit dimatikan)
+      let isEnabled = hasAnyToken;
+      if (typeof serverConfig.enabled === 'boolean') {
+        isEnabled = serverConfig.enabled;
+      }
+      if (typeof localConfig.enabled === 'boolean' && localConfig.botToken) {
+        isEnabled = localConfig.enabled;
+      }
+      if (hasAnyToken && isEnabled === false && (serverConfig.enabled === true || serverConfig.hasEnvConfig)) {
+        isEnabled = true;
+      }
 
       const merged: TelegramConfig = {
         botToken: resolvedToken,
@@ -104,13 +111,14 @@ export async function getTelegramConfig(): Promise<TelegramConfig> {
 
   const token = (localConfig.botToken || ENV_BOT_TOKEN || '').trim();
   const chat = (localConfig.chatId || ENV_CHAT_ID || '').trim();
+  const hasTokens = Boolean(token && chat);
 
   return {
     ...DEFAULT_TELEGRAM_CONFIG,
     ...localConfig,
     botToken: token,
     chatId: chat,
-    enabled: localConfig.enabled ?? Boolean(token && chat),
+    enabled: typeof localConfig.enabled === 'boolean' ? localConfig.enabled : hasTokens,
     notifyMutasiMasuk: localConfig.notifyMutasiMasuk ?? true,
     notifyMutasiKeluar: localConfig.notifyMutasiKeluar ?? true,
     notifyPangkatBaru: localConfig.notifyPangkatBaru ?? true,
@@ -250,10 +258,23 @@ export async function sendTelegramMessage(
   webAppUrl?: string,
   options?: { threadId?: string; targetChatId?: string; category?: string }
 ): Promise<{ success: boolean; message: string }> {
-  const currentConfig = customConfig?.botToken ? { ...DEFAULT_TELEGRAM_CONFIG, ...customConfig } : await getTelegramConfig();
+  const currentConfig = await getTelegramConfig();
+  if (customConfig) {
+    Object.assign(currentConfig, customConfig);
+  }
   const botToken = cleanVal(customConfig?.botToken || currentConfig.botToken || ENV_BOT_TOKEN);
   const chatId = cleanVal(options?.targetChatId || customConfig?.chatId || currentConfig.chatId || ENV_CHAT_ID);
-  const threadId = cleanVal(options?.threadId) || undefined;
+  
+  // Resolusi threadId dari options atau dari konfigurasi kategori
+  let threadId = cleanVal(options?.threadId) || undefined;
+  if (!threadId && options?.category) {
+    const cat = options.category.toLowerCase();
+    if (cat === 'verval_pd') threadId = cleanVal(currentConfig.threadIdVervalPD) || undefined;
+    else if (cat === 'mutasi_keluar') threadId = cleanVal(currentConfig.threadIdMutasiKeluar) || undefined;
+    else if (cat === 'mutasi_masuk') threadId = cleanVal(currentConfig.threadIdMutasiMasuk) || undefined;
+    else if (cat === 'pangkat') threadId = cleanVal(currentConfig.threadIdPangkat) || undefined;
+    else if (cat === 'kgb') threadId = cleanVal(currentConfig.threadIdKGB) || undefined;
+  }
 
   // 1. Coba Server Proxy endpoint (/api/telegram/send - Vercel Serverless Function & Express)
   // Endpoint ini otomatis membaca TELEGRAM_BOT_TOKEN & TELEGRAM_CHAT_ID dari Environment Variables Vercel!
@@ -367,13 +388,14 @@ export async function testTelegramConnection(
 export async function notifyMutasiMasuk(
   item: Partial<MutasiMasukItem>,
   config?: TelegramConfig,
-  webAppUrl?: string
+  webAppUrl?: string,
+  isEdit = false
 ): Promise<{ success: boolean; message: string }> {
   const conf = await getTelegramConfig();
   if (config?.botToken) {
     Object.assign(conf, config);
   }
-  if (conf.notifyMutasiMasuk === false) {
+  if (!conf.enabled || conf.notifyMutasiMasuk === false) {
     return { success: false, message: 'Notifikasi Mutasi Masuk dinonaktifkan di pengaturan' };
   }
 
@@ -384,8 +406,14 @@ export async function notifyMutasiMasuk(
   const tgl = item.tglMasuk || item.tanggalPengajuan || new Date().toLocaleDateString('id-ID');
   const now = new Date();
   const waktuStr = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
+  const title = isEdit 
+    ? '📥 <b>[MUTASI MASUK] PERUBAHAN DATA MUTASI MASUK SISWA</b>'
+    : '📥 <b>[MUTASI MASUK] NOTIFIKASI MUTASI MASUK SISWA BARU</b>';
+  const verifikator = (item.verval_oleh || item.vervalOleh)
+    ? `\n👤 <b>Diverifikasi/Diubah Oleh:</b> <b>${escapeTelegramHtml(item.verval_oleh || item.vervalOleh)}</b>`
+    : '';
 
-  const message = `📥 <b>[MUTASI MASUK] NOTIFIKASI MUTASI MASUK SISWA</b>
+  const message = `${title}
 ━━━━━━━━━━━━━━━━━━━━
 👤 <b>Nama Siswa:</b> <b>${escapeTelegramHtml(item.nama || '-')}</b>
 🆔 <b>NISN:</b> <code>${escapeTelegramHtml(item.nisn || '-')}</code>
@@ -394,9 +422,9 @@ export async function notifyMutasiMasuk(
 🎯 <b>Rombel Tujuan:</b> <b>${escapeTelegramHtml(item.rombelTujuan || '-')}</b>
 📅 <b>Tanggal Masuk:</b> ${escapeTelegramHtml(tgl)}
 📌 <b>Status:</b> <b>${escapeTelegramHtml(item.status || 'Pending')}</b>
-📝 <b>Keterangan:</b> ${escapeTelegramHtml(item.keterangan || '-')}
+📝 <b>Keterangan:</b> ${escapeTelegramHtml(item.keterangan || '-')}${verifikator}
 ━━━━━━━━━━━━━━━━━━━━
-⏰ <i>Waktu Input: ${escapeTelegramHtml(waktuStr)}</i>
+⏰ <i>Waktu ${isEdit ? 'Perubahan' : 'Input'}: ${escapeTelegramHtml(waktuStr)}</i>
 🏛️ <i>Sistem Informasi Data Siswa Dapodik</i>
 
 #MUTASI_MASUK #SISWA_BARU`;
@@ -423,7 +451,7 @@ export async function notifyPangkatBaru(
   if (config?.botToken) {
     Object.assign(conf, config);
   }
-  if (conf.notifyPangkatBaru === false) {
+  if (!conf.enabled || conf.notifyPangkatBaru === false) {
     return { success: false, message: 'Notifikasi Kenaikan Pangkat dinonaktifkan di pengaturan' };
   }
 
@@ -449,7 +477,7 @@ export async function notifyPangkatBaru(
   const targetChatId = conf.chatIdPangkat || conf.chatId;
   const threadId = conf.threadIdPangkat;
 
-  return sendTelegramMessage(message, conf, webAppUrl, { threadId, targetChatId });
+  return sendTelegramMessage(message, conf, webAppUrl, { threadId, targetChatId, category: 'pangkat' });
 }
 
 /**
@@ -460,8 +488,11 @@ export async function notifyKGBBaru(
   config?: TelegramConfig,
   webAppUrl?: string
 ): Promise<{ success: boolean; message: string }> {
-  const conf = config || await getTelegramConfig();
-  if (!conf.enabled || !conf.notifyKGBBaru) {
+  const conf = await getTelegramConfig();
+  if (config?.botToken) {
+    Object.assign(conf, config);
+  }
+  if (!conf.enabled || conf.notifyKGBBaru === false) {
     return { success: false, message: 'Notifikasi KGB tidak diaktifkan' };
   }
 
@@ -492,7 +523,7 @@ export async function notifyKGBBaru(
   const targetChatId = conf.chatIdKGB || conf.chatId;
   const threadId = conf.threadIdKGB;
 
-  return sendTelegramMessage(message, conf, webAppUrl, { threadId, targetChatId });
+  return sendTelegramMessage(message, conf, webAppUrl, { threadId, targetChatId, category: 'kgb' });
 }
 
 /**
@@ -501,19 +532,26 @@ export async function notifyKGBBaru(
 export async function notifyMutasiKeluar(
   item: Partial<MutasiKeluarItem>,
   config?: TelegramConfig,
-  webAppUrl?: string
+  webAppUrl?: string,
+  isEdit = false
 ): Promise<{ success: boolean; message: string }> {
   const conf = await getTelegramConfig();
   if (config?.botToken) {
     Object.assign(conf, config);
   }
-  if (conf.notifyMutasiKeluar === false) {
+  if (!conf.enabled || conf.notifyMutasiKeluar === false) {
     return { success: false, message: 'Notifikasi Mutasi Keluar dinonaktifkan di pengaturan' };
   }
 
   const tgl = item.tglMutasi || new Date().toLocaleDateString('id-ID');
   const now = new Date();
   const waktuStr = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
+  const title = isEdit 
+    ? '📤 <b>[MUTASI KELUAR] PERUBAHAN DATA MUTASI KELUAR SISWA</b>'
+    : '📤 <b>[MUTASI KELUAR] NOTIFIKASI MUTASI KELUAR SISWA</b>';
+  const verifikator = (item.verval_oleh || item.vervalOleh)
+    ? `\n👤 <b>Diverifikasi/Diubah Oleh:</b> <b>${escapeTelegramHtml(item.verval_oleh || item.vervalOleh)}</b>`
+    : '';
 
   let berkasSection = '';
   if (item.uploadBerkas && item.uploadBerkas.startsWith('http')) {
@@ -522,7 +560,7 @@ export async function notifyMutasiKeluar(
     berkasSection = `\n📁 <b>Berkas:</b> ${escapeTelegramHtml(item.uploadBerkas)}`;
   }
 
-  const message = `📤 <b>[MUTASI KELUAR] NOTIFIKASI MUTASI KELUAR SISWA</b>
+  const message = `${title}
 ━━━━━━━━━━━━━━━━━━━━
 👤 <b>Nama Siswa:</b> <b>${escapeTelegramHtml(item.nama || '-')}</b>
 🆔 <b>NISN:</b> <code>${escapeTelegramHtml(item.nisn || '-')}</code> | <b>NIPD:</b> <code>${escapeTelegramHtml(item.nipd || '-')}</code>
@@ -531,9 +569,9 @@ export async function notifyMutasiKeluar(
 🏫 <b>Pindah Ke:</b> ${escapeTelegramHtml(item.pindahKe || '-')}
 📅 <b>Tanggal Mutasi:</b> ${escapeTelegramHtml(tgl)}
 💬 <b>Alasan:</b> ${escapeTelegramHtml(item.alasanMutasi || '-')}
-📋 <b>Status:</b> ${escapeTelegramHtml(item.status || 'Selesai')}${berkasSection}
+📋 <b>Status:</b> ${escapeTelegramHtml(item.status || 'Selesai')}${berkasSection}${verifikator}
 ━━━━━━━━━━━━━━━━━━━━
-⏰ <i>Waktu Input: ${escapeTelegramHtml(waktuStr)}</i>
+⏰ <i>Waktu ${isEdit ? 'Perubahan' : 'Input'}: ${escapeTelegramHtml(waktuStr)}</i>
 🏛️ <i>Sistem Informasi Data Siswa Dapodik</i>
 
 #MUTASI_KELUAR #SISWA`;
@@ -573,7 +611,10 @@ export async function notifyVervalPD(
   config?: TelegramConfig,
   webAppUrl?: string
 ): Promise<{ success: boolean; message: string }> {
-  const conf = config || await getTelegramConfig();
+  const conf = await getTelegramConfig();
+  if (config?.botToken) {
+    Object.assign(conf, config);
+  }
   if (!conf.enabled || conf.notifyVervalPD === false) {
     return { success: false, message: 'Notifikasi Verval PD tidak diaktifkan' };
   }
@@ -634,5 +675,9 @@ ${daftarSiswaStr}${moreText}
   const targetChatId = conf.chatIdVervalPD || conf.chatId;
   const threadId = conf.threadIdVervalPD;
 
-  return sendTelegramMessage(message, conf, webAppUrl, { threadId, targetChatId });
+  return sendTelegramMessage(message, conf, webAppUrl, { 
+    threadId, 
+    targetChatId, 
+    category: 'verval_pd' 
+  });
 }

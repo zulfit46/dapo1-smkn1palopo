@@ -2777,11 +2777,13 @@ async function startServer() {
   });
 
   // Telegram Endpoints
+  // Telegram Endpoints
   app.get("/api/telegram/config", (req, res) => {
     res.json({
       botToken: telegramConfig.botToken || "",
       chatId: telegramConfig.chatId || "",
-      enabled: Boolean(telegramConfig.enabled),
+      enabled: typeof telegramConfig.enabled === 'boolean' ? telegramConfig.enabled : Boolean(telegramConfig.botToken && telegramConfig.chatId),
+      hasEnvConfig: Boolean(defaultEnvBotToken && defaultEnvChatId),
       notifyMutasiMasuk: telegramConfig.notifyMutasiMasuk !== false,
       notifyMutasiKeluar: telegramConfig.notifyMutasiKeluar !== false,
       notifyPangkatBaru: telegramConfig.notifyPangkatBaru !== false,
@@ -2866,14 +2868,45 @@ async function startServer() {
 
   app.post("/api/telegram/send", async (req, res) => {
     try {
-      const { botToken, chatId, message, threadId, message_thread_id } = req.body;
+      const { botToken, chatId, message, threadId, message_thread_id, category } = req.body;
       if (!message) {
         return res.status(400).json({ status: "error", message: "Pesan tidak boleh kosong" });
       }
 
       const activeToken = (botToken || telegramConfig.botToken || defaultEnvBotToken || '').trim();
-      const activeChatId = (chatId || telegramConfig.chatId || defaultEnvChatId || '').trim();
-      const activeThreadId = threadId || message_thread_id;
+      let activeChatId = (chatId || telegramConfig.chatId || defaultEnvChatId || '').trim();
+      let activeThreadId = threadId || message_thread_id;
+
+      const cat = String(category || '').toLowerCase();
+      // Resolusi thread ID dan chat ID berdasarkan kategori jika belum ditentukan
+      if (!activeThreadId) {
+        if (cat === 'mutasi_keluar' || message.includes('[MUTASI KELUAR]')) {
+          activeThreadId = (telegramConfig as any).threadIdMutasiKeluar || process.env.TELEGRAM_THREAD_ID_MUTASI_KELUAR || '';
+        } else if (cat === 'mutasi_masuk' || message.includes('[MUTASI MASUK]')) {
+          activeThreadId = (telegramConfig as any).threadIdMutasiMasuk || process.env.TELEGRAM_THREAD_ID_MUTASI_MASUK || '';
+        } else if (cat === 'verval_pd' || message.includes('[VERVAL PD]') || message.includes('VERVAL PD')) {
+          activeThreadId = (telegramConfig as any).threadIdVervalPD || process.env.TELEGRAM_THREAD_ID_VERVALPD || '';
+        } else if (cat === 'pangkat' || message.includes('PANGKAT')) {
+          activeThreadId = (telegramConfig as any).threadIdPangkat || process.env.TELEGRAM_THREAD_ID_PANGKAT || '';
+        } else if (cat === 'kgb' || message.includes('GAJI BERKALA')) {
+          activeThreadId = (telegramConfig as any).threadIdKGB || process.env.TELEGRAM_THREAD_ID_KGB || '';
+        }
+      }
+
+      if (!chatId) {
+        if ((cat === 'mutasi_keluar' || message.includes('[MUTASI KELUAR]')) && (telegramConfig as any).chatIdMutasiKeluar) {
+          activeChatId = (telegramConfig as any).chatIdMutasiKeluar;
+        } else if ((cat === 'mutasi_masuk' || message.includes('[MUTASI MASUK]')) && (telegramConfig as any).chatIdMutasiMasuk) {
+          activeChatId = (telegramConfig as any).chatIdMutasiMasuk;
+        } else if ((cat === 'verval_pd' || message.includes('[VERVAL PD]')) && (telegramConfig as any).chatIdVervalPD) {
+          activeChatId = (telegramConfig as any).chatIdVervalPD;
+        } else if ((cat === 'pangkat' || message.includes('PANGKAT')) && (telegramConfig as any).chatIdPangkat) {
+          activeChatId = (telegramConfig as any).chatIdPangkat;
+        } else if ((cat === 'kgb' || message.includes('GAJI BERKALA')) && (telegramConfig as any).chatIdKGB) {
+          activeChatId = (telegramConfig as any).chatIdKGB;
+        }
+      }
+
       if (!activeToken || !activeChatId) {
         return res.status(400).json({ status: "error", message: "Bot Token atau Chat ID belum ditentukan" });
       }

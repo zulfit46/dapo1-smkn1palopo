@@ -620,16 +620,16 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
         .catch(err => console.warn('Latar belakang simpan ke spreadsheet:', err));
     }
 
-    // Kirim notifikasi Telegram otomatis untuk data mutasi masuk baru
-    if (!editingItem) {
-      notifyMutasiMasuk(targetItem, telegramConfig, appConfig?.webAppUrl)
-        .then(tRes => {
-          if (tRes.success) {
-            console.log('[Telegram] Notifikasi mutasi masuk terkirim:', tRes.message);
-          }
-        })
-        .catch(tErr => console.warn('[Telegram] Gagal mengirim notifikasi mutasi masuk:', tErr));
-    }
+    // Kirim notifikasi Telegram otomatis untuk data mutasi masuk baru atau perubahan data
+    notifyMutasiMasuk(targetItem, undefined, appConfig?.webAppUrl, Boolean(editingItem))
+      .then(tRes => {
+        if (tRes.success) {
+          console.log('[Telegram] Notifikasi mutasi masuk terkirim:', tRes.message);
+        } else {
+          console.warn('[Telegram] Notifikasi mutasi masuk:', tRes.message);
+        }
+      })
+      .catch(tErr => console.warn('[Telegram] Gagal mengirim notifikasi mutasi masuk:', tErr));
 
     setNotification({
       type: 'success',
@@ -724,6 +724,13 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
         .catch(err => console.warn('Latar belakang perbarui status di spreadsheet:', err));
     }
 
+    // Kirim notifikasi Telegram untuk perubahan status mutasi masuk
+    notifyMutasiMasuk(updatedItem, undefined, appConfig?.webAppUrl, true)
+      .then(tRes => {
+        if (tRes?.success) console.log('[Telegram] Notifikasi status mutasi masuk terkirim:', tRes.message);
+      })
+      .catch(tErr => console.warn('[Telegram] Gagal mengirim notifikasi status mutasi masuk:', tErr));
+
     setNotification({
       type: 'success',
       message: `Status mutasi siswa "${item.nama}" telah diubah menjadi "${newStatus}".`
@@ -750,6 +757,13 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
       saveMutasiKeluarDirectly(appConfig.webAppUrl, updatedItem, true)
         .catch(err => console.warn('Gagal sinkron status mutasi keluar ke spreadsheet:', err));
     }
+
+    // Kirim notifikasi Telegram untuk perubahan status mutasi keluar
+    notifyMutasiKeluar(updatedItem, undefined, appConfig?.webAppUrl, true)
+      .then(tRes => {
+        if (tRes?.success) console.log('[Telegram] Notifikasi status mutasi keluar terkirim:', tRes.message);
+      })
+      .catch(tErr => console.warn('[Telegram] Gagal mengirim notifikasi status mutasi keluar:', tErr));
 
     setNotification({
       type: 'success',
@@ -1177,16 +1191,16 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
       console.warn('Simpan ke spreadsheet gagal:', err);
     }
 
-    // Kirim notifikasi Telegram otomatis untuk data mutasi keluar baru
-    if (!editingKeluarItem) {
-      notifyMutasiKeluar(targetItem, telegramConfig, appConfig?.webAppUrl)
-        .then(tRes => {
-          if (tRes.success) {
-            console.log('[Telegram] Notifikasi mutasi keluar terkirim:', tRes.message);
-          }
-        })
-        .catch(tErr => console.warn('[Telegram] Gagal mengirim notifikasi mutasi keluar:', tErr));
-    }
+    // Kirim notifikasi Telegram otomatis untuk data mutasi keluar baru atau perubahan data
+    notifyMutasiKeluar(targetItem, undefined, appConfig?.webAppUrl, Boolean(editingKeluarItem))
+      .then(tRes => {
+        if (tRes?.success) {
+          console.log('[Telegram] Notifikasi mutasi keluar terkirim:', tRes.message);
+        } else {
+          console.warn('[Telegram] Notifikasi mutasi keluar:', tRes?.message);
+        }
+      })
+      .catch(tErr => console.warn('[Telegram] Gagal mengirim notifikasi mutasi keluar:', tErr));
 
     resetKeluarForm();
     setIsSavingKeluar(false);
