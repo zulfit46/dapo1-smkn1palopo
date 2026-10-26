@@ -153,9 +153,10 @@ export default async function handler(req: any, res: any) {
 
     let fallbackToMainChat = false;
 
-    // Jika threadId tidak ditemukan di grup, otomatis coba kirim ke chat utama (tanpa message_thread_id)
-    if ((!tgRes.ok || !data?.ok) && payload.message_thread_id && String(data?.description || '').toLowerCase().includes('thread not found')) {
-      console.warn(`[Vercel Serverless] Thread ID ${payload.message_thread_id} not found in chat ${chatId}. Retrying into main chat...`);
+    // Jika pengiriman ke topik (message_thread_id) gagal (topik salah, topik ditutup, grup bukan forum, dll),
+    // otomatis alihkan pengiriman ke ruang obrolan utama grup agar notifikasi tidak hilang!
+    if ((!tgRes.ok || !data?.ok) && payload.message_thread_id) {
+      console.warn(`[Vercel Serverless] Gagal mengirim ke Thread ID ${payload.message_thread_id} (${data?.description || 'Error'}). Mencoba mengalihkan ke ruang chat utama grup...`);
       delete payload.message_thread_id;
       tgRes = await fetch(telegramUrl, {
         method: 'POST',
@@ -168,7 +169,9 @@ export default async function handler(req: any, res: any) {
       } catch {
         data = { ok: false, description: `HTTP ${tgRes.status}` };
       }
-      fallbackToMainChat = true;
+      if (tgRes.ok && data?.ok) {
+        fallbackToMainChat = true;
+      }
     }
 
     if (!tgRes.ok || !data?.ok) {
