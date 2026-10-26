@@ -552,9 +552,21 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
                       <span className="text-[10px] text-slate-500">SK GTK</span>
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-600 mb-1 font-medium">
-                        Thread / Topik ID:
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] text-slate-600 font-medium">
+                          Thread / Topik ID:
+                        </label>
+                        {config.threadIdPangkat && (
+                          <button
+                            type="button"
+                            disabled={isTesting}
+                            onClick={() => handleTestTopic('Kenaikan Pangkat', config.chatIdPangkat || config.chatId, config.threadIdPangkat)}
+                            className="text-[10px] text-sky-600 hover:text-sky-800 font-bold underline cursor-pointer disabled:opacity-50"
+                          >
+                            Tes Topik Ini
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={config.threadIdPangkat || ''}
@@ -586,9 +598,21 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
                       <span className="text-[10px] text-slate-500">SK Berkala GTK</span>
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-600 mb-1 font-medium">
-                        Thread / Topik ID:
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] text-slate-600 font-medium">
+                          Thread / Topik ID:
+                        </label>
+                        {config.threadIdKGB && (
+                          <button
+                            type="button"
+                            disabled={isTesting}
+                            onClick={() => handleTestTopic('Gaji Berkala (KGB)', config.chatIdKGB || config.chatId, config.threadIdKGB)}
+                            className="text-[10px] text-sky-600 hover:text-sky-800 font-bold underline cursor-pointer disabled:opacity-50"
+                          >
+                            Tes Topik Ini
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={config.threadIdKGB || ''}
@@ -623,9 +647,21 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[11px] text-slate-600 mb-1 font-medium">
-                          Thread / Topik ID:
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] text-slate-600 font-medium">
+                            Thread / Topik ID:
+                          </label>
+                          {config.threadIdVervalPD && (
+                            <button
+                              type="button"
+                              disabled={isTesting}
+                              onClick={() => handleTestTopic('Verval PD', config.chatIdVervalPD || config.chatId, config.threadIdVervalPD)}
+                              className="text-[10px] text-sky-600 hover:text-sky-800 font-bold underline cursor-pointer disabled:opacity-50"
+                            >
+                              Tes Topik Ini
+                            </button>
+                          )}
+                        </div>
                         <input
                           type="text"
                           value={config.threadIdVervalPD || ''}
