@@ -189,9 +189,9 @@ async function sendDirectToTelegram(
   let data = await res.json();
   let fallbackToMainChat = false;
 
-  // Jika thread/topik tidak ditemukan, coba kirim ke ruang obrolan utama grup
-  if ((!res.ok || !data.ok) && params.has('message_thread_id') && String(data.description || '').toLowerCase().includes('thread not found')) {
-    console.warn(`[Telegram Direct] Thread ID ${threadId} tidak ditemukan di chat ${cleanChatId}. Mengalihkan ke ruang utama...`);
+  // Jika pengiriman ke topik/thread gagal, otomatis coba kirim ke ruang obrolan utama grup
+  if ((!res.ok || !data.ok) && params.has('message_thread_id')) {
+    console.warn(`[Telegram Direct] Gagal kirim ke Thread ID ${threadId} (${data?.description || 'Error'}). Mengalihkan pesan ke chat utama...`);
     params.delete('message_thread_id');
     res = await fetch(url, {
       method: 'POST',
@@ -200,7 +200,9 @@ async function sendDirectToTelegram(
       signal: AbortSignal.timeout(12000),
     });
     data = await res.json();
-    fallbackToMainChat = true;
+    if (res.ok && data.ok) {
+      fallbackToMainChat = true;
+    }
   }
 
   if (!res.ok || !data.ok) {
