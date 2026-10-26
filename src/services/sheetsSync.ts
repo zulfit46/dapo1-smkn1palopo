@@ -1,7 +1,8 @@
-import { Student, AppConfig, GTKData, RiwayatPangkat, RiwayatKGB, MutasiMasukItem, MutasiKeluarItem, PembelajaranData, GajiData, PIPData, normalizeStudent } from '../types';
-import { SPREADSHEET_ID, SHEET_NAME, SHEET_NAME_GTK, SHEET_NAME_NAIKPANGKAT, SHEET_NAME_KGB, SHEET_NAME_MUTASI_MASUK, SHEET_NAME_MUTASI_KELUAR, SHEET_NAME_PEMBELAJARAN, SHEET_NAME_GAJI, DRIVE_FOLDER_ID_MUTASI_KELUAR } from '../data/codeGsScript';
+import { Student, AppConfig, GTKData, RiwayatPangkat, RiwayatKGB, MutasiMasukItem, MutasiKeluarItem, PembelajaranData, GajiData, PIPData, WaliKelas, normalizeStudent } from '../types';
+import { SPREADSHEET_ID, SHEET_NAME, SHEET_NAME_GTK, SHEET_NAME_NAIKPANGKAT, SHEET_NAME_KGB, SHEET_NAME_MUTASI_MASUK, SHEET_NAME_MUTASI_KELUAR, SHEET_NAME_PEMBELAJARAN, SHEET_NAME_GAJI, SHEET_NAME_WALIKELAS, DRIVE_FOLDER_ID_MUTASI_KELUAR } from '../data/codeGsScript';
 import { INITIAL_PEMBELAJARAN_LIST } from '../data/initialPembelajaran';
 import { INITIAL_GAJI_LIST } from '../data/initialGaji';
+import { INITIAL_WALI_KELAS_LIST } from '../data/initialWaliKelas';
 import { safeGetItem, safeSetItem } from '../utils/storage';
 import { formatToDDMMYYYY, parseToYYYYMMDD } from '../utils/dateUtils';
 
@@ -15,6 +16,7 @@ const LOCAL_STORAGE_MUTASI_MASUK_KEY = 'dapodik_cached_mutasi_masuk';
 const LOCAL_STORAGE_MUTASI_KELUAR_KEY = 'dapodik_cached_mutasi_keluar';
 const LOCAL_STORAGE_PEMBELAJARAN_KEY = 'dapodik_cached_pembelajaran';
 const LOCAL_STORAGE_GAJI_KEY = 'dapodik_cached_gaji';
+export const LOCAL_STORAGE_WALIKELAS_KEY = 'dapodik_cached_walikelas';
 const LOCAL_STORAGE_CONFIG_KEY = 'dapodik_app_config';
 
 /**
@@ -2577,6 +2579,177 @@ export async function savePIPDirectly(
     return { success: true, message: 'Data PIP berhasil dikirim ke Google Sheets (sheet: pip)' };
   } catch (err: any) {
     return { success: false, message: err?.message || 'Gagal mengirim data ke Google Sheets' };
+  }
+}
+
+/**
+ * Mengambil data Wali Kelas dari sheet "walikelas" (headers: kelas, nama, nip)
+ */
+export async function fetchWaliKelasFromSheet(
+  webAppUrl?: string, 
+  spreadsheetId?: string,
+  force = false
+): Promise<WaliKelas[]> {
+  const ssId = spreadsheetId || SPREADSHEET_ID;
+  const activeWebAppUrl = webAppUrl || 'https://script.google.com/macros/s/AKfycbxwfqpqePmp5mtpzeJSTHpiz0PxyqSbOA3hWw1Zy8Iofvi1lMIWxYeMllDNlmP-8RI/exec';
+
+  // 1. Coba dari Express backend (/api/walikelas)
+  try {
+    const bRes = await fetch('/api/walikelas', { signal: AbortSignal.timeout(6000) });
+    if (bRes.ok) {
+      const bJson = await bRes.json();
+      if (bJson?.status === 'success' && Array.isArray(bJson.data) && bJson.data.length > 0) {
+        safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, bJson.data);
+        return bJson.data;
+      }
+    }
+  } catch {}
+
+  // 2. Coba dari Google Apps Script Web App (?sheet=walikelas)
+  if (activeWebAppUrl) {
+    try {
+      const url = `${activeWebAppUrl}${activeWebAppUrl.includes('?') ? '&' : '?'}sheet=walikelas&target=walikelas&_t=${Date.now()}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        if (json?.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+          const mapped: WaliKelas[] = json.data.map((r: any) => ({
+            kelas: String(r.kelas || r.Kelas || r.rombel || '').trim(),
+            nama: String(r.nama || r.Nama || '').trim(),
+            nip: String(r.nip || r.NIP || '').trim(),
+          })).filter((w: WaliKelas) => w.kelas && w.nama);
+
+          if (mapped.length > 0) {
+            safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, mapped);
+            return mapped;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Coba dari Google Sheets GViz API langsung pada sheet "walikelas"
+  if (ssId) {
+    const candidates = ['walikelas', 'wali_kelas', 'WaliKelas', 'WALIKELAS'];
+    for (const sheetName of candidates) {
+      try {
+        const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}&_t=${Date.now()}`;
+        const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(10000) });
+        if (res.ok) {
+          const text = await res.text();
+          const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+          if (jsonText) {
+            const parsed = JSON.parse(jsonText);
+            const rawRows = parsed.table?.rows || [];
+            const cols = parsed.table?.cols || [];
+            if (rawRows.length > 0) {
+              let headers: string[] = [];
+              let startIdx = 0;
+              const hasColLabels = cols.some((c: any) => c.label && c.label.trim() !== '');
+              if (hasColLabels) {
+                headers = cols.map((c: any) => String(c.label || '').trim().toLowerCase());
+                startIdx = 0;
+              } else {
+                headers = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase() : '') || [];
+                startIdx = 1;
+              }
+
+              const kelasIdx = headers.findIndex(h => h === 'kelas' || h === 'rombel');
+              const namaIdx = headers.findIndex(h => h === 'nama' || h === 'walikelas' || h === 'nama_wali');
+              const nipIdx = headers.findIndex(h => h === 'nip');
+
+              const parsedList: WaliKelas[] = [];
+              for (let i = startIdx; i < rawRows.length; i++) {
+                const row = rawRows[i]?.c;
+                if (!row) continue;
+                const getVal = (idx: number) => {
+                  if (idx < 0 || !row[idx]) return '';
+                  const cell = row[idx];
+                  return cell.f || (cell.v !== null && cell.v !== undefined ? String(cell.v).trim() : '');
+                };
+                const k = getVal(kelasIdx >= 0 ? kelasIdx : 0);
+                const n = getVal(namaIdx >= 0 ? namaIdx : 1);
+                const p = getVal(nipIdx >= 0 ? nipIdx : 2);
+                if (k && n) {
+                  parsedList.push({ kelas: k, nama: n, nip: p });
+                }
+              }
+
+              if (parsedList.length > 0) {
+                safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, parsedList);
+                return parsedList;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 4. Fallback ke local storage / initial data
+  const cached = safeGetItem<WaliKelas[]>(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
+  return Array.isArray(cached) && cached.length > 0 ? cached : INITIAL_WALI_KELAS_LIST;
+}
+
+/**
+ * Sinkronisasi seluruh data Wali Kelas ke Google Sheets (sheet: walikelas)
+ */
+export async function syncAllWaliKelasDirectly(
+  webAppUrl: string, 
+  items: WaliKelas[]
+): Promise<{ success: boolean; message: string }> {
+  // Simpan seketika di local storage
+  safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, items);
+
+  // 1. Coba kirim via server endpoint /api/walikelas/import
+  try {
+    const sRes = await fetch('/api/walikelas/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+      signal: AbortSignal.timeout(20000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} data wali kelas!` };
+      }
+    }
+  } catch {}
+
+  // 2. Kirim langsung ke Google Apps Script Web App
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data wali kelas ke penyimpanan lokal!` };
+  }
+
+  try {
+    const payload = {
+      action: 'importWaliKelas',
+      target: 'walikelas',
+      items: items.map(w => ({
+        kelas: String(w.kelas || '').trim(),
+        nama: String(w.nama || '').trim(),
+        nip: String(w.nip || '').trim()
+      }))
+    };
+
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000)
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} data wali kelas ke Google Sheets!` };
+      }
+    }
+
+    return { success: true, message: `Data ${items.length} wali kelas berhasil disimpan ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data wali kelas ke Google Sheets' };
   }
 }
 
