@@ -1181,17 +1181,7 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
       }
     }
 
-    // Sync directly to Google Sheets sheet "mutasi_keluar"
-    try {
-      const saveRes = await saveMutasiKeluarDirectly(appConfig?.webAppUrl || '', targetItem, !!editingKeluarItem);
-      if (saveRes.success) {
-        console.log('Tersimpan di sheet mutasi_keluar:', saveRes.message);
-      }
-    } catch (err) {
-      console.warn('Simpan ke spreadsheet gagal:', err);
-    }
-
-    // Kirim notifikasi Telegram otomatis untuk data mutasi keluar baru atau perubahan data
+    // 1. Kirim notifikasi Telegram seketika (non-blocking) agar tidak tertahan oleh durasi spreadsheet
     notifyMutasiKeluar(targetItem, undefined, appConfig?.webAppUrl, Boolean(editingKeluarItem))
       .then(tRes => {
         if (tRes?.success) {
@@ -1201,6 +1191,15 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
         }
       })
       .catch(tErr => console.warn('[Telegram] Gagal mengirim notifikasi mutasi keluar:', tErr));
+
+    // 2. Sync ke Google Sheets sheet "mutasi_keluar"
+    if (appConfig?.webAppUrl) {
+      saveMutasiKeluarDirectly(appConfig.webAppUrl, targetItem, !!editingKeluarItem)
+        .then(saveRes => {
+          if (saveRes.success) console.log('Tersimpan di sheet mutasi_keluar:', saveRes.message);
+        })
+        .catch(err => console.warn('Simpan ke spreadsheet gagal:', err));
+    }
 
     resetKeluarForm();
     setIsSavingKeluar(false);
