@@ -104,9 +104,9 @@ async function sendTelegramMessageServer(botToken?: string, chatId?: string, mes
 
   let data: any = await res.json();
 
-  // Jika threadId tidak ditemukan (error: "message thread not found"), otomatis fallback kirim ke chat utama
-  if ((!res.ok || !data.ok) && payload.message_thread_id && String(data.description || '').toLowerCase().includes('thread not found')) {
-    console.warn(`[Telegram Send] Thread ID ${payload.message_thread_id} tidak ditemukan di grup ${chat}. Mengalihkan pesan ke chat utama...`);
+  // Jika threadId tidak ditemukan atau topik gagal (salah ID, topik ditutup, bukan forum), otomatis fallback kirim ke chat utama
+  if ((!res.ok || !data.ok) && payload.message_thread_id) {
+    console.warn(`[Telegram Send] Pengiriman ke Thread ID ${payload.message_thread_id} gagal (${data?.description || 'Error'}). Mengalihkan pesan ke chat utama...`);
     delete payload.message_thread_id;
     res = await fetch(url, {
       method: 'POST',
