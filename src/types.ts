@@ -410,6 +410,8 @@ export type ActiveTab =
   | 'gtk-biodata' 
   | 'gtk-pangkat' 
   | 'gtk-kgb' 
+  | 'gtk-walikelas'
+  | 'walikelas'
   | 'gtk-pembelajaran'
   | 'gtk-tugas-tambahan'
   | 'tugas-tambahan'
