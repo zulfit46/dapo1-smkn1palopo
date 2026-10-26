@@ -91,6 +91,16 @@ export const DAFTAR_AKSES_MENU: MenuItemDefinition[] = [
     contohInput: 'gtk-tugas_tambahan'
   },
   {
+    id: 'gtk-walikelas',
+    kode: 'gtk-walikelas',
+    nama: 'Wali Kelas',
+    kategori: 'GTK',
+    tab: 'gtk-walikelas',
+    aliases: ['gtk-walikelas', 'walikelas', 'wali-kelas', 'data-walikelas', 'daftar-walikelas', 'wali_kelas'],
+    deskripsi: 'Daftar penugasan Wali Kelas per rombel (data dari sheet walikelas)',
+    contohInput: 'gtk-walikelas'
+  },
+  {
     id: 'gtk-akses_menu',
     kode: 'gtk-akses_menu',
     nama: 'Akses Menu',
@@ -295,6 +305,8 @@ export function parseAksesMenuString(raw?: string | null): Set<ActiveTab> | null
       allowedTabs.add('pembelajaran');
       allowedTabs.add('gtk-tugas-tambahan');
       allowedTabs.add('tugas-tambahan');
+      allowedTabs.add('gtk-walikelas');
+      allowedTabs.add('walikelas');
       return;
     }
 
