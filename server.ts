@@ -2415,6 +2415,58 @@ async function startServer() {
     });
   });
 
+  // POST Import Wali Kelas
+  app.post("/api/walikelas/import", async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data wali kelas tidak boleh kosong" });
+      }
+
+      // Update cache di server
+      cachedWaliKelasList = items.map((w: any) => ({
+        kelas: String(w.kelas || "").trim(),
+        nama: String(w.nama || "").trim(),
+        nip: String(w.nip || "").trim()
+      }));
+
+      const newMap: Record<string, string> = {};
+      cachedWaliKelasList.forEach(w => {
+        if (w.kelas && w.nama) {
+          newMap[w.kelas] = w.nama;
+        }
+      });
+      cachedWaliKelasMap = newMap;
+
+      // Jika ada webAppUrl, teruskan ke Google Apps Script
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "importWaliKelas",
+            target: "walikelas",
+            items: cachedWaliKelasList
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 30000);
+        } catch (gasErr) {
+          console.warn("[WaliKelas Import] Penerusan ke GAS gagal, data tetap tersimpan di server:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan memperbarui ${cachedWaliKelasList.length} data wali kelas!`,
+        total: cachedWaliKelasList.length,
+        list: cachedWaliKelasList
+      });
+    } catch (err: any) {
+      console.error("[WaliKelas Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor data wali kelas"
+      });
+    }
+  });
+
   // GET App Config
   app.get("/api/config", (req, res) => {
     res.json(appConfig);
@@ -2796,7 +2848,66 @@ async function startServer() {
     }
   });
 
-  // Telegram Endpoints
+  // GET Wali Kelas List
+  app.get("/api/walikelas", (req, res) => {
+    res.json({
+      status: "success",
+      total: cachedWaliKelasList.length,
+      data: cachedWaliKelasList
+    });
+  });
+
+  // POST Import Wali Kelas List
+  app.post("/api/walikelas/import", async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ status: "error", message: "Data items wali kelas tidak valid" });
+      }
+
+      const cleanItems: WaliKelas[] = items.map((it: any) => ({
+        kelas: String(it.kelas || it.Kelas || it.rombel || '').trim(),
+        nama: String(it.nama || it.Nama || it.guru || '').trim(),
+        nip: String(it.nip || it.NIP || '').trim(),
+      })).filter(it => it.kelas && it.nama);
+
+      if (cleanItems.length === 0) {
+        return res.status(400).json({ status: "error", message: "Tidak ada baris data kelas dan nama yang valid untuk disimpan" });
+      }
+
+      cachedWaliKelasList = cleanItems;
+      const newMap: Record<string, string> = {};
+      cleanItems.forEach(w => {
+        newMap[w.kelas] = w.nama;
+      });
+      cachedWaliKelasMap = newMap;
+
+      console.log(`[Wali Kelas] Memperbarui ${cleanItems.length} penugasan wali kelas`);
+
+      // Forward ke Google Apps Script Web App jika dikonfigurasi
+      if (appConfig.webAppUrl) {
+        sendToGas(appConfig.webAppUrl, {
+          action: 'importWaliKelas',
+          target: 'walikelas',
+          items: cleanItems
+        }, 30000).catch(err => console.warn('Gagal sinkron walikelas ke Google Sheets:', err));
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan menyimpan ${cleanItems.length} data wali kelas`,
+        total: cleanItems.length,
+        data: cleanItems
+      });
+    } catch (err: any) {
+      console.error("[Wali Kelas Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal memproses impor data wali kelas"
+      });
+    }
+  });
+
   // Telegram Endpoints
   app.get("/api/telegram/config", (req, res) => {
     res.json({
