@@ -333,19 +333,7 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
       };
     });
 
-    let syncFeedback = '';
-    if (onSaveVerval) {
-      try {
-        const result = await onSaveVerval(updates);
-        if (result && typeof result.gasUpdated === 'number') {
-          syncFeedback = ` (${result.gasUpdated} data berhasil diperbarui di Spreadsheet)`;
-        }
-      } catch (err) {
-        console.warn('Error saving verval updates:', err);
-      }
-    }
-
-    // Kirim notifikasi Telegram untuk perubahan status Verval PD (Topik: VervalPD)
+    // Siapkan notifikasi Telegram untuk perubahan status Verval PD
     const notifItems: VervalPDItemNotification[] = modifiedStudents.map((student) => {
       const status = getStudentStatus(student);
       const ket = status === 'Aktif' ? '' : (getStudentKet(student) || 'Mutasi');
@@ -365,25 +353,40 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
       };
     });
 
-    let tgFeedback = '';
-    try {
-      const tgRes = await notifyVervalPD(
-        notifItems,
-        {
-          actorName,
-          kelasName: selectedRombel !== 'Semua Rombel' ? selectedRombel : (effectiveWali?.kelas || 'Semua Rombel'),
-        },
-        undefined,
-        appConfig?.webAppUrl
-      );
-      if (tgRes?.success) {
-        tgFeedback = ' • Notifikasi Telegram terkirim';
-        console.log('[Telegram VervalPD] Notifikasi terkirim:', tgRes.message);
-      } else {
-        console.warn('[Telegram VervalPD] Notifikasi tidak terkirim:', tgRes?.message);
+    // 1. Kirim notifikasi Telegram seketika
+    const tgPromise = notifyVervalPD(
+      notifItems,
+      {
+        actorName,
+        kelasName: selectedRombel !== 'Semua Rombel' ? selectedRombel : (effectiveWali?.kelas || 'Semua Rombel'),
+      },
+      undefined,
+      appConfig?.webAppUrl
+    ).catch(err => {
+      console.warn('[Telegram VervalPD] Error kirim notifikasi:', err);
+      return null;
+    });
+
+    // 2. Simpan ke Spreadsheet
+    let syncFeedback = '';
+    if (onSaveVerval) {
+      try {
+        const result = await onSaveVerval(updates);
+        if (result && typeof result.gasUpdated === 'number') {
+          syncFeedback = ` (${result.gasUpdated} data berhasil diperbarui di Spreadsheet)`;
+        }
+      } catch (err) {
+        console.warn('Error saving verval updates:', err);
       }
-    } catch (tgErr) {
-      console.warn('[Telegram VervalPD] Error kirim notifikasi:', tgErr);
+    }
+
+    const tgRes = await tgPromise;
+    let tgFeedback = '';
+    if (tgRes?.success) {
+      tgFeedback = ' • Notifikasi Telegram terkirim';
+      console.log('[Telegram VervalPD] Notifikasi terkirim:', tgRes.message);
+    } else if (tgRes?.message) {
+      console.warn('[Telegram VervalPD] Info:', tgRes.message);
     }
 
     // Reset local edit states since changes are saved
