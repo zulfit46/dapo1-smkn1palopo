@@ -10,7 +10,7 @@ import { INITIAL_WALI_KELAS, INITIAL_WALI_KELAS_LIST } from './data/initialWaliK
 import { INITIAL_JURUSAN_LIST } from './data/initialJurusan';
 import { INITIAL_GTK_LIST } from './data/initialGTK';
 import { INITIAL_PEMBELAJARAN_LIST } from './data/initialPembelajaran';
-import { fetchStudentsDirectly, syncVervalDirectly, saveStudentDirectly, fetchGTKDirectly, fetchPembelajaranDirectly } from './services/sheetsSync';
+import { fetchStudentsDirectly, syncVervalDirectly, saveStudentDirectly, fetchGTKDirectly, fetchPembelajaranDirectly, fetchWaliKelasFromSheet, LOCAL_STORAGE_WALIKELAS_KEY } from './services/sheetsSync';
 import { safeGetItem, safeSetItem } from './utils/storage';
 import { isUserRole } from './utils/authUtils';
 import { DAPO1_BASE64 } from './assets/dapo1Base64';
@@ -31,6 +31,7 @@ import { GTKKGBView } from './components/GTKKGBView';
 import { GTKGajiView } from './components/GTKGajiView';
 import { PembelajaranView } from './components/PembelajaranView';
 import { GTKTugasTambahanView } from './components/GTKTugasTambahanView';
+import { WaliKelasView } from './components/WaliKelasView';
 import { RekapPDView } from './components/RekapPDView';
 import { RekapGTKView } from './components/RekapGTKView';
 import { AksesMenuView } from './components/AksesMenuView';
@@ -100,8 +101,29 @@ export default function App() {
     return safeGetItem<AttendanceRecord[]>('dapodik_cached_attendance', INITIAL_ATTENDANCE);
   });
 
-  const [waliKelasMap, setWaliKelasMap] = useState<Record<string, string>>(INITIAL_WALI_KELAS);
-  const [waliKelasList, setWaliKelasList] = useState<WaliKelas[]>(INITIAL_WALI_KELAS_LIST);
+  const [waliKelasList, setWaliKelasList] = useState<WaliKelas[]>(() => {
+    const cached = safeGetItem<WaliKelas[]>(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
+    return Array.isArray(cached) && cached.length > 0 ? cached : INITIAL_WALI_KELAS_LIST;
+  });
+
+  const [waliKelasMap, setWaliKelasMap] = useState<Record<string, string>>(() => {
+    const list = safeGetItem<WaliKelas[]>(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
+    const validList = Array.isArray(list) && list.length > 0 ? list : INITIAL_WALI_KELAS_LIST;
+    return validList.reduce((acc, curr) => {
+      acc[curr.kelas] = curr.nama;
+      return acc;
+    }, {} as Record<string, string>);
+  });
+
+  const handleUpdateWaliKelas = (newList: WaliKelas[]) => {
+    setWaliKelasList(newList);
+    const newMap: Record<string, string> = {};
+    newList.forEach(w => {
+      newMap[w.kelas] = w.nama;
+    });
+    setWaliKelasMap(newMap);
+    safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, newList);
+  };
   const [jurusanList, setJurusanList] = useState<Jurusan[]>(INITIAL_JURUSAN_LIST);
   const [authenticatedWali, setAuthenticatedWali] = useState<WaliKelas | null>(() => {
     try {
@@ -217,6 +239,18 @@ export default function App() {
       .catch(err => {
         console.warn('Gagal memuat pembelajaran:', err);
       });
+
+    // Fetch Wali Kelas concurrently from sheet "walikelas"
+    fetchWaliKelasFromSheet(appConfig.webAppUrl, appConfig.spreadsheetId, force)
+      .then(wl => {
+        if (wl && wl.length > 0) {
+          setWaliKelasList(wl);
+          const m: Record<string, string> = {};
+          wl.forEach(w => { m[w.kelas] = w.nama; });
+          setWaliKelasMap(m);
+        }
+      })
+      .catch(err => console.warn('Gagal memuat wali kelas:', err));
 
     try {
       // 1. Try fetching config from server
@@ -819,6 +853,16 @@ export default function App() {
               appConfig={appConfig}
               onRefresh={() => fetchStudentsData(true)}
               isRefreshing={isRefreshing}
+            />
+          )}
+
+          {(activeTab === 'gtk-walikelas' || activeTab === 'walikelas') && (
+            <WaliKelasView
+              waliKelasList={waliKelasList}
+              onUpdateWaliKelas={handleUpdateWaliKelas}
+              appConfig={appConfig}
+              currentUser={currentUser}
+              theme={theme}
             />
           )}
 
