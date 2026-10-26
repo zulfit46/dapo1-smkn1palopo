@@ -62,7 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   // Accordion state: hanya satu grup menu yang terbuka pada satu waktu
   const [openMenu, setOpenMenu] = useState<'gtk' | 'peserta-didik' | 'rekap' | null>(() => {
-    if (activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-gaji' || activeTab === 'gaji' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan' || activeTab === 'akses-menu') return 'gtk';
+    if (activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-gaji' || activeTab === 'gaji' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan' || activeTab === 'gtk-walikelas' || activeTab === 'walikelas' || activeTab === 'akses-menu') return 'gtk';
     if (activeTab === 'biodata' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'mutasi' || activeTab === 'pip' || activeTab === 'surat' || activeTab === 'absen-pd') return 'peserta-didik';
     if (activeTab === 'rekap' || activeTab === 'rekap-pd' || activeTab === 'rekap-gtk') return 'rekap';
     return null;
@@ -85,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsMobileOpen(false);
   };
 
-  const isGTKActive = activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-gaji' || activeTab === 'gaji' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan' || activeTab === 'akses-menu';
+  const isGTKActive = activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-gaji' || activeTab === 'gaji' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan' || activeTab === 'gtk-walikelas' || activeTab === 'walikelas' || activeTab === 'akses-menu';
   const isPesertaDidikActive = activeTab === 'biodata' || activeTab === 'absen-pd' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'mutasi' || activeTab === 'pip' || activeTab === 'surat' || activeTab === 'surat-pindah' || activeTab === 'surat-ket-siswa';
   const isRekapActive = activeTab === 'rekap' || activeTab === 'rekap-pd' || activeTab === 'rekap-gtk';
   const isUser = isUserRole(currentUser);
@@ -347,6 +347,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span>Tugas Tambahan</span>
                       </div>
                       {(activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan') && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                      )}
+                    </button>
+                  )}
+
+                  {/* Submenu: Wali Kelas */}
+                  {isTabPermitted('gtk-walikelas', currentUser, waliKelasList) && (
+                    <button
+                      onClick={() => handleNavClick('gtk-walikelas')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        activeTab === 'gtk-walikelas' || activeTab === 'walikelas'
+                          ? isGlass
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30 font-bold'
+                            : 'bg-emerald-600 text-white shadow-xs font-bold'
+                          : isGlass
+                            ? 'text-purple-300/70 hover:bg-white/10 hover:text-white'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <GraduationCap className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Wali Kelas</span>
+                      </div>
+                      {(activeTab === 'gtk-walikelas' || activeTab === 'walikelas') && (
                         <span className="w-1.5 h-1.5 rounded-full bg-white" />
                       )}
                     </button>
