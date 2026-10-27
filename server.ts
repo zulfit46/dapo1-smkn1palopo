@@ -3225,10 +3225,18 @@ async function startServer() {
 
   // POST Import / Replace Full Student Dataset (Smart Merge from Excel)
   app.post("/api/students/import", async (req, res) => {
-    const { students: importedStudents } = req.body;
-    if (!Array.isArray(importedStudents)) {
+    const rawList = req.body.students || req.body.items;
+    if (!Array.isArray(rawList)) {
       return res.status(400).json({ status: "error", message: "Data siswa yang diimpor tidak valid" });
     }
+
+    const importedStudents: Student[] = rawList.map((s, idx) => {
+      const norm = normalizeStudent(s);
+      if (!norm.id) {
+        norm.id = norm.nipd || norm.nisn || `STU-IMP-${idx + 1}`;
+      }
+      return norm;
+    });
 
     studentList = [...importedStudents];
     cachedSheetsData = [...importedStudents];
@@ -3243,39 +3251,16 @@ async function startServer() {
 
     // Sync to Google Apps Script in background if configured
     if (appConfig.webAppUrl && importedStudents.length > 0) {
-      fetch(appConfig.webAppUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'importAll',
-          students: importedStudents
-        }),
-        signal: AbortSignal.timeout(30000)
+      sendToGas(appConfig.webAppUrl, {
+        action: 'importAll',
+        target: 'data',
+        students: importedStudents,
+        items: importedStudents
+      }, 45000)
+      .then(gasRes => {
+        console.log('[Student Import] Sync ke Google Apps Script berhasil:', gasRes.json || gasRes.status);
       })
-      .then(r => r.json())
-      .then(async json => {
-        console.log('Google Apps Script importAll sync result:', json);
-        // Fallback for older deployed Google Apps Script versions that only recognize batch_update
-        if (json && json.status === 'error' && (String(json.message).includes('importAll') || String(json.message).includes('Aksi tidak dikenali'))) {
-          console.log('Fallback: Mengirim data ke Google Apps Script menggunakan batch_update...');
-          try {
-            const fallbackRes = await fetch(appConfig.webAppUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'batch_update',
-                updates: importedStudents
-              }),
-              signal: AbortSignal.timeout(30000)
-            });
-            const fallbackJson = await fallbackRes.json();
-            console.log('Google Apps Script batch_update fallback sync result:', fallbackJson);
-          } catch (fallbackErr: any) {
-            console.warn('Fallback sync warning:', fallbackErr?.message || fallbackErr);
-          }
-        }
-      })
-      .catch(err => console.warn('Google Apps Script importAll sync warning:', err?.message || err));
+      .catch(err => console.warn('[Student Import] Sync ke Google Apps Script warning:', err?.message || err));
     }
   });
 
