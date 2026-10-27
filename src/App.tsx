@@ -10,7 +10,7 @@ import { INITIAL_WALI_KELAS, INITIAL_WALI_KELAS_LIST } from './data/initialWaliK
 import { INITIAL_JURUSAN_LIST } from './data/initialJurusan';
 import { INITIAL_GTK_LIST } from './data/initialGTK';
 import { INITIAL_PEMBELAJARAN_LIST } from './data/initialPembelajaran';
-import { fetchStudentsDirectly, syncVervalDirectly, saveStudentDirectly, fetchGTKDirectly, fetchPembelajaranDirectly, fetchWaliKelasFromSheet, LOCAL_STORAGE_WALIKELAS_KEY } from './services/sheetsSync';
+import { fetchStudentsDirectly, syncVervalDirectly, saveStudentDirectly, fetchGTKDirectly, fetchPembelajaranDirectly, fetchWaliKelasFromSheet, LOCAL_STORAGE_WALIKELAS_KEY, fetchJurusanFromSheet, LOCAL_STORAGE_JURUSAN_KEY } from './services/sheetsSync';
 import { safeGetItem, safeSetItem } from './utils/storage';
 import { isUserRole } from './utils/authUtils';
 import { DAPO1_BASE64 } from './assets/dapo1Base64';
@@ -32,6 +32,7 @@ import { GTKGajiView } from './components/GTKGajiView';
 import { PembelajaranView } from './components/PembelajaranView';
 import { GTKTugasTambahanView } from './components/GTKTugasTambahanView';
 import { WaliKelasView } from './components/WaliKelasView';
+import { JurusanView } from './components/JurusanView';
 import { RekapPDView } from './components/RekapPDView';
 import { RekapGTKView } from './components/RekapGTKView';
 import { AksesMenuView } from './components/AksesMenuView';
@@ -124,7 +125,15 @@ export default function App() {
     setWaliKelasMap(newMap);
     safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, newList);
   };
-  const [jurusanList, setJurusanList] = useState<Jurusan[]>(INITIAL_JURUSAN_LIST);
+
+  const [jurusanList, setJurusanList] = useState<Jurusan[]>(() => {
+    return safeGetItem<Jurusan[]>(LOCAL_STORAGE_JURUSAN_KEY, INITIAL_JURUSAN_LIST);
+  });
+
+  const handleUpdateJurusan = (newList: Jurusan[]) => {
+    setJurusanList(newList);
+    safeSetItem(LOCAL_STORAGE_JURUSAN_KEY, newList);
+  };
   const [authenticatedWali, setAuthenticatedWali] = useState<WaliKelas | null>(() => {
     try {
       const saved = sessionStorage.getItem('verval_wali_auth');
@@ -251,6 +260,16 @@ export default function App() {
         }
       })
       .catch(err => console.warn('Gagal memuat wali kelas:', err));
+
+    // Fetch Jurusan concurrently from sheet "jurusan"
+    fetchJurusanFromSheet(appConfig.webAppUrl, appConfig.spreadsheetId, force)
+      .then(jl => {
+        if (jl && jl.length > 0) {
+          setJurusanList(jl);
+          safeSetItem(LOCAL_STORAGE_JURUSAN_KEY, jl);
+        }
+      })
+      .catch(err => console.warn('Gagal memuat jurusan:', err));
 
     try {
       // 1. Try fetching config from server
@@ -798,6 +817,16 @@ export default function App() {
               currentUser={currentUser}
               waliKelasList={waliKelasList}
               jurusanList={jurusanList}
+            />
+          )}
+
+          {(activeTab === 'peserta-jurusan' || activeTab === 'jurusan') && (
+            <JurusanView
+              jurusanList={jurusanList}
+              onUpdateJurusan={handleUpdateJurusan}
+              appConfig={appConfig}
+              currentUser={currentUser}
+              theme={theme}
             />
           )}
 
