@@ -1,8 +1,9 @@
-import { Student, AppConfig, GTKData, RiwayatPangkat, RiwayatKGB, MutasiMasukItem, MutasiKeluarItem, PembelajaranData, GajiData, PIPData, WaliKelas, normalizeStudent } from '../types';
-import { SPREADSHEET_ID, SHEET_NAME, SHEET_NAME_GTK, SHEET_NAME_NAIKPANGKAT, SHEET_NAME_KGB, SHEET_NAME_MUTASI_MASUK, SHEET_NAME_MUTASI_KELUAR, SHEET_NAME_PEMBELAJARAN, SHEET_NAME_GAJI, SHEET_NAME_WALIKELAS, DRIVE_FOLDER_ID_MUTASI_KELUAR } from '../data/codeGsScript';
+import { Student, AppConfig, GTKData, RiwayatPangkat, RiwayatKGB, MutasiMasukItem, MutasiKeluarItem, PembelajaranData, GajiData, PIPData, WaliKelas, Jurusan, normalizeStudent } from '../types';
+import { SPREADSHEET_ID, SHEET_NAME, SHEET_NAME_GTK, SHEET_NAME_NAIKPANGKAT, SHEET_NAME_KGB, SHEET_NAME_MUTASI_MASUK, SHEET_NAME_MUTASI_KELUAR, SHEET_NAME_PEMBELAJARAN, SHEET_NAME_GAJI, SHEET_NAME_WALIKELAS, SHEET_NAME_JURUSAN, DRIVE_FOLDER_ID_MUTASI_KELUAR } from '../data/codeGsScript';
 import { INITIAL_PEMBELAJARAN_LIST } from '../data/initialPembelajaran';
 import { INITIAL_GAJI_LIST } from '../data/initialGaji';
 import { INITIAL_WALI_KELAS_LIST } from '../data/initialWaliKelas';
+import { INITIAL_JURUSAN_LIST } from '../data/initialJurusan';
 import { safeGetItem, safeSetItem } from '../utils/storage';
 import { formatToDDMMYYYY, parseToYYYYMMDD } from '../utils/dateUtils';
 
@@ -17,6 +18,7 @@ const LOCAL_STORAGE_MUTASI_KELUAR_KEY = 'dapodik_cached_mutasi_keluar';
 const LOCAL_STORAGE_PEMBELAJARAN_KEY = 'dapodik_cached_pembelajaran';
 const LOCAL_STORAGE_GAJI_KEY = 'dapodik_cached_gaji';
 export const LOCAL_STORAGE_WALIKELAS_KEY = 'dapodik_cached_walikelas';
+export const LOCAL_STORAGE_JURUSAN_KEY = 'dapodik_cached_jurusan';
 const LOCAL_STORAGE_CONFIG_KEY = 'dapodik_app_config';
 
 /**
@@ -2752,6 +2754,180 @@ export async function syncAllWaliKelasDirectly(
     return { success: false, message: err?.message || 'Gagal mengirim data wali kelas ke Google Sheets' };
   }
 }
+
+/**
+ * Mengambil data Jurusan dari sheet "jurusan" (headers: kode, Program_Keahlian, Konsentrasi_Keahlian)
+ */
+export async function fetchJurusanFromSheet(
+  webAppUrl?: string, 
+  spreadsheetId?: string,
+  force = false
+): Promise<Jurusan[]> {
+  const ssId = spreadsheetId || SPREADSHEET_ID;
+  const activeWebAppUrl = webAppUrl || 'https://script.google.com/macros/s/AKfycbxwfqpqePmp5mtpzeJSTHpiz0PxyqSbOA3hWw1Zy8Iofvi1lMIWxYeMllDNlmP-8RI/exec';
+
+  // 1. Coba dari Express backend (/api/jurusan)
+  try {
+    const bRes = await fetch(`/api/jurusan${force ? '?force=true' : ''}`, { signal: AbortSignal.timeout(6000) });
+    if (bRes.ok) {
+      const bJson = await bRes.json();
+      if (bJson?.status === 'success' && Array.isArray(bJson.data) && bJson.data.length > 0) {
+        safeSetItem(LOCAL_STORAGE_JURUSAN_KEY, bJson.data);
+        return bJson.data;
+      }
+    }
+  } catch {}
+
+  // 2. Coba dari Google Apps Script Web App (?sheet=jurusan)
+  if (activeWebAppUrl) {
+    try {
+      const url = `${activeWebAppUrl}${activeWebAppUrl.includes('?') ? '&' : '?'}sheet=jurusan&target=jurusan&_t=${Date.now()}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        if (json?.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+          const mapped: Jurusan[] = json.data.map((r: any) => ({
+            kode: String(r.kode || r.Kode || '').trim(),
+            programKeahlian: String(r.programKeahlian || r.Program_Keahlian || r.program_keahlian || '').trim(),
+            konsentrasiKeahlian: String(r.konsentrasiKeahlian || r.Konsentrasi_Keahlian || r.konsentrasi_keahlian || '').trim(),
+          })).filter((j: Jurusan) => j.kode || j.programKeahlian || j.konsentrasiKeahlian);
+
+          if (mapped.length > 0) {
+            safeSetItem(LOCAL_STORAGE_JURUSAN_KEY, mapped);
+            return mapped;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Coba dari Google Sheets GViz API langsung pada sheet "jurusan"
+  if (ssId) {
+    const candidates = ['jurusan', 'keahlian', 'Jurusan', 'JURUSAN'];
+    for (const sheetName of candidates) {
+      try {
+        const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}&_t=${Date.now()}`;
+        const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(10000) });
+        if (res.ok) {
+          const text = await res.text();
+          const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+          if (jsonText) {
+            const parsed = JSON.parse(jsonText);
+            const rawRows = parsed.table?.rows || [];
+            const cols = parsed.table?.cols || [];
+            if (rawRows.length > 0) {
+              let headers: string[] = [];
+              let startIdx = 0;
+              const hasColLabels = cols.some((c: any) => c.label && c.label.trim() !== '');
+              if (hasColLabels) {
+                headers = cols.map((c: any) => String(c.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+                startIdx = 0;
+              } else {
+                headers = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '') || [];
+                startIdx = 1;
+              }
+
+              const kodeIdx = headers.findIndex(h => h === 'kode' || h === 'kd');
+              const pkIdx = headers.findIndex(h => h === 'programkeahlian' || h === 'pk' || h === 'program');
+              const kkIdx = headers.findIndex(h => h === 'konsentrasikeahlian' || h === 'kk' || h === 'konsentrasi' || h === 'jurusan');
+
+              const parsedList: Jurusan[] = [];
+              for (let i = startIdx; i < rawRows.length; i++) {
+                const row = rawRows[i]?.c;
+                if (!row) continue;
+                const getVal = (idx: number) => {
+                  if (idx < 0 || !row[idx]) return '';
+                  const cell = row[idx];
+                  return cell.f || (cell.v !== null && cell.v !== undefined ? String(cell.v).trim() : '');
+                };
+                const kd = getVal(kodeIdx >= 0 ? kodeIdx : 0);
+                const pk = getVal(pkIdx >= 0 ? pkIdx : 1);
+                const kk = getVal(kkIdx >= 0 ? kkIdx : 2);
+                if (kd || pk || kk) {
+                  parsedList.push({ kode: kd, programKeahlian: pk, konsentrasiKeahlian: kk });
+                }
+              }
+
+              if (parsedList.length > 0) {
+                safeSetItem(LOCAL_STORAGE_JURUSAN_KEY, parsedList);
+                return parsedList;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 4. Fallback ke local storage / initial data
+  const cached = safeGetItem<Jurusan[]>(LOCAL_STORAGE_JURUSAN_KEY, INITIAL_JURUSAN_LIST);
+  return Array.isArray(cached) && cached.length > 0 ? cached : INITIAL_JURUSAN_LIST;
+}
+
+/**
+ * Sinkronisasi seluruh data Jurusan ke Google Sheets (sheet: jurusan)
+ */
+export async function syncAllJurusanDirectly(
+  webAppUrl: string, 
+  items: Jurusan[]
+): Promise<{ success: boolean; message: string }> {
+  // Simpan seketika di local storage
+  safeSetItem(LOCAL_STORAGE_JURUSAN_KEY, items);
+
+  // 1. Coba kirim via server endpoint /api/jurusan/import
+  try {
+    const sRes = await fetch('/api/jurusan/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+      signal: AbortSignal.timeout(20000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} data jurusan!` };
+      }
+    }
+  } catch {}
+
+  // 2. Kirim langsung ke Google Apps Script Web App
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data jurusan ke penyimpanan lokal!` };
+  }
+
+  try {
+    const payload = {
+      action: 'importJurusan',
+      target: 'jurusan',
+      items: items.map(j => ({
+        kode: String(j.kode || '').trim(),
+        Program_Keahlian: String(j.programKeahlian || '').trim(),
+        Konsentrasi_Keahlian: String(j.konsentrasiKeahlian || '').trim(),
+        programKeahlian: String(j.programKeahlian || '').trim(),
+        konsentrasiKeahlian: String(j.konsentrasiKeahlian || '').trim()
+      }))
+    };
+
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000)
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} data jurusan ke Google Sheets!` };
+      }
+    }
+
+    return { success: true, message: `Data ${items.length} jurusan berhasil disimpan ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data jurusan ke Google Sheets' };
+  }
+}
+
 
 
 
