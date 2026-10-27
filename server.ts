@@ -435,12 +435,35 @@ async function fetchJurusanFromGoogleSheets(): Promise<Jurusan[]> {
         }
       } catch (err: any) {
         if (err?.name === 'TimeoutError' || String(err).includes('timeout')) {
-          console.log("Koneksi GViz sheet jurusan timeout, menggunakan cache data lokal.");
+          console.log("Koneksi GViz sheet jurusan timeout, mencoba fallback...");
         } else {
-          console.warn("Catatan: Sheet jurusan tidak dapat diakses online saat ini, menggunakan cache data lokal.", err?.message || err);
+          console.warn("Catatan: Sheet jurusan tidak dapat diakses online via GViz saat ini, mencoba fallback...", err?.message || err);
         }
       }
     }
+
+    // Fallback: Google Apps Script Web App (?sheet=jurusan)
+    if (appConfig.webAppUrl) {
+      try {
+        const url = appConfig.webAppUrl + (appConfig.webAppUrl.includes('?') ? '&' : '?') + 'sheet=jurusan&_t=' + Date.now();
+        const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+            const list: Jurusan[] = json.data.map((j: any) => ({
+              kode: String(j.kode || j.Kode || '').trim(),
+              programKeahlian: String(j.programKeahlian || j.Program_Keahlian || j.program_keahlian || '').trim(),
+              konsentrasiKeahlian: String(j.konsentrasiKeahlian || j.Konsentrasi_Keahlian || j.konsentrasi_keahlian || '').trim()
+            })).filter((j: Jurusan) => j.kode || j.programKeahlian || j.konsentrasiKeahlian);
+            if (list.length > 0) {
+              cachedJurusanList = list;
+              return list;
+            }
+          }
+        }
+      } catch {}
+    }
+
     return cachedJurusanList;
   })().finally(() => {
     fetchJurusanPromise = null;
@@ -2374,13 +2397,56 @@ async function startServer() {
 
   // GET Jurusan (List)
   app.get("/api/jurusan", async (req, res) => {
-    if (cachedJurusanList.length === 0) {
+    const isForce = req.query.force === 'true';
+    if (isForce || cachedJurusanList.length === 0) {
       await fetchJurusanFromGoogleSheets();
     }
     res.json({
       status: "success",
       data: cachedJurusanList
     });
+  });
+
+  // POST Import Jurusan
+  app.post("/api/jurusan/import", async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data jurusan tidak boleh kosong" });
+      }
+
+      cachedJurusanList = items.map((j: any) => ({
+        kode: String(j.kode || j.Kode || "").trim(),
+        programKeahlian: String(j.programKeahlian || j.Program_Keahlian || j.program_keahlian || j.ProgramKeahlian || "").trim(),
+        konsentrasiKeahlian: String(j.konsentrasiKeahlian || j.Konsentrasi_Keahlian || j.konsentrasi_keahlian || j.KonsentrasiKeahlian || "").trim()
+      }));
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "importJurusan",
+            target: "jurusan",
+            items: cachedJurusanList
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 30000);
+        } catch (gasErr) {
+          console.warn("[Jurusan Import] Penerusan ke GAS gagal, data tetap tersimpan di server:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan memperbarui ${cachedJurusanList.length} data jurusan!`,
+        total: cachedJurusanList.length,
+        list: cachedJurusanList
+      });
+    } catch (err: any) {
+      console.error("[Jurusan Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor data jurusan"
+      });
+    }
   });
 
   // POST Verify NIP
