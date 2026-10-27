@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Search, 
   Filter, 
@@ -15,10 +15,13 @@ import {
   Layers,
   Users,
   ShieldCheck,
-  ChevronDown
+  ChevronDown,
+  Upload,
+  Download,
+  CheckCircle2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Student, WaliKelas, Jurusan, GTKData } from '../types';
+import { Student, WaliKelas, Jurusan, GTKData, AppConfig } from '../types';
 import { INITIAL_WALI_KELAS, INITIAL_WALI_KELAS_LIST } from '../data/initialWaliKelas';
 import { INITIAL_JURUSAN_LIST, getJurusanByKelas } from '../data/initialJurusan';
 import { isUserRole } from '../utils/authUtils';
@@ -29,6 +32,8 @@ import {
   fetchGTKAllowedDownloadHeadersFromServer
 } from '../data/gtkDownloadColumns';
 import { GTKDownloadHeadersModal } from './GTKDownloadHeadersModal';
+import { DAPODIK_DATA_HEADERS, studentToDapodikRow, dapodikRowToStudent } from '../data/dapodikHeaders';
+import { syncAllStudentsDirectly } from '../services/sheetsSync';
 
 interface BiodataViewProps {
   students: Student[];
@@ -36,9 +41,11 @@ interface BiodataViewProps {
   waliKelasList?: WaliKelas[];
   jurusanList?: Jurusan[];
   webAppUrl?: string;
+  appConfig?: AppConfig;
   currentUser?: GTKData | null;
   allowedGtkHeaders?: string[];
   onUpdateAllowedGtkHeaders?: (keys: string[]) => void;
+  onImportStudents?: (newStudents: Student[]) => void;
   onAddStudent: () => void;
   onEditStudent: (student: Student) => void;
   onDeleteStudent: (id: string) => void;
@@ -53,9 +60,11 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
   waliKelasList = INITIAL_WALI_KELAS_LIST,
   jurusanList = INITIAL_JURUSAN_LIST,
   webAppUrl,
+  appConfig,
   currentUser,
   allowedGtkHeaders: propAllowedGtkHeaders,
   onUpdateAllowedGtkHeaders,
+  onImportStudents,
   onAddStudent,
   onEditStudent,
   onDeleteStudent,
@@ -84,6 +93,15 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
   });
   const [isGtkHeadersModalOpen, setIsGtkHeadersModalOpen] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+
+  // Modal Impor Data Excel Sheet Data (69 Kolom) State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importedStudents, setImportedStudents] = useState<Student[]>([]);
+  const [importFileName, setImportFileName] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync if prop from parent updates
   React.useEffect(() => {
@@ -275,8 +293,176 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
     }
   };
 
+  // Unduh Template Excel Lengkap 69 Kolom Sheet "data" Dapodik
+  const handleDownloadDapodikTemplate = () => {
+    const dataToExport = students.length > 0
+      ? students.map(studentToDapodikRow)
+      : [
+          studentToDapodikRow({
+            id: 'STU-1',
+            nama: 'CONTOH NAMA SISWA',
+            kelas: 'X RPL 1',
+            nipd: '212210001',
+            nisn: '0061234567',
+            jk: 'L',
+            tempatLahir: 'Palopo',
+            tanggalLahir: '2006-05-12',
+            agama: 'Islam',
+            alamat: 'Jl. Pemuda No. 10',
+            ayah: 'Nama Ayah',
+            ibu: 'Nama Ibu',
+            pekerjaanAyah: 'Wiraswasta',
+            pekerjaanIbu: 'Ibu Rumah Tangga',
+            status: 'Aktif',
+            ket: ''
+          })
+        ];
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport, {
+      header: [...DAPODIK_DATA_HEADERS]
+    });
+
+    // Format SEMUA sel sebagai text string ('@') agar NISN, NIPD, NIK, No. Rek tidak kehilangan nol atau jadi notasi ilmiah
+    Object.keys(worksheet).forEach((cellKey) => {
+      if (cellKey.startsWith('!')) return;
+      worksheet[cellKey].t = 's';
+      worksheet[cellKey].z = '@';
+    });
+
+    // Atur lebar kolom yang proporsional
+    worksheet['!cols'] = DAPODIK_DATA_HEADERS.map((h) => {
+      if (h === 'Nama' || h === 'nama_ayah' || h === 'nama_ibu' || h === 'namawali') return { wch: 28 };
+      if (h === 'Alamat' || h === 'sekolah_asal') return { wch: 32 };
+      if (h === 'NIK' || h === 'nik_ayah' || h === 'nik_ibu' || h === 'no_kk') return { wch: 20 };
+      if (h === 'NISN' || h === 'NIPD' || h === 'no_ujian' || h === 'no_ijazah') return { wch: 16 };
+      return { wch: 14 };
+    });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'data');
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(workbook, `Template_Biodata_Siswa_Sheet_data_${dateStr}.xlsx`);
+  };
+
+  // Membaca dan validasi file Excel impor (sheet: data, 69 kolom)
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportError(null);
+    setImportFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const buffer = evt.target?.result;
+        // Baca file dengan raw: false dan cellText: true agar SEMUA tipe data murni teks string
+        const workbook = XLSX.read(buffer, { type: 'array', cellText: true, raw: false });
+
+        // Temukan sheet 'data' atau gunakan sheet pertama
+        const targetSheetName = workbook.SheetNames.find(n => n.trim().toLowerCase() === 'data') || workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[targetSheetName];
+
+        if (!worksheet) {
+          throw new Error('Sheet data dalam berkas Excel tidak terbaca atau kosong.');
+        }
+
+        // Ambil data dalam bentuk array of objects dengan nilai string murni
+        const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { 
+          raw: false,
+          defval: '' 
+        });
+
+        if (rawJson.length === 0) {
+          throw new Error('Berkas Excel tidak memiliki baris data.');
+        }
+
+        const parsedRows: Student[] = [];
+        rawJson.forEach((row, idx) => {
+          const student = dapodikRowToStudent(row, idx);
+          // Siswa valid jika memiliki nama, NISN, atau NIPD
+          if (student.nama || student.nisn || student.nipd) {
+            parsedRows.push(student);
+          }
+        });
+
+        if (parsedRows.length === 0) {
+          throw new Error('Tidak ada baris data siswa yang valid. Pastikan header sesuai dengan sheet "data" (Nama, NIPD, JK, NISN, dll).');
+        }
+
+        setImportedStudents(parsedRows);
+      } catch (err: any) {
+        setImportError(err?.message || 'Gagal membaca berkas Excel. Pastikan format kolom sesuai dengan 69 header sheet data.');
+        setImportedStudents([]);
+      }
+    };
+
+    reader.onerror = () => {
+      setImportError('Gagal membaca file dari penyimpanan.');
+      setImportedStudents([]);
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Eksekusi Simpan Hasil Impor ke State & Google Sheets
+  const handleApplyImport = async () => {
+    if (importedStudents.length === 0) return;
+
+    setIsImporting(true);
+    setImportError(null);
+
+    try {
+      // 1. Simpan ke state komponen induk & localStorage
+      if (onImportStudents) {
+        onImportStudents(importedStudents);
+      }
+
+      // 2. Sinkronisasi ke Express Server (/api/students/import) & Google Sheets (sheet "data")
+      const targetUrl = webAppUrl || appConfig?.webAppUrl || '';
+      const syncRes = await syncAllStudentsDirectly(targetUrl, importedStudents);
+
+      setNotification({
+        type: 'success',
+        message: syncRes.message || `Berhasil mengimpor dan memperbarui ${importedStudents.length} data peserta didik!`
+      });
+
+      // Tutup modal setelah delay singkat
+      setTimeout(() => {
+        setIsImportModalOpen(false);
+        setImportedStudents([]);
+        setImportFileName('');
+        if (importFileInputRef.current) {
+          importFileInputRef.current.value = '';
+        }
+      }, 1200);
+    } catch (err: any) {
+      setImportError(err?.message || 'Terjadi kesalahan saat menyimpan data impor ke server.');
+    } finally {
+      setIsImporting(false);
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
   return (
     <div className="space-y-6 w-full">
+      {/* Notifikasi Status */}
+      {notification && (
+        <div className={`p-4 rounded-xl flex items-center gap-3 border shadow-xs animate-in fade-in duration-200 ${
+          notification.type === 'success' 
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+            : 'bg-rose-50 border-rose-200 text-rose-800'
+        }`}>
+          {notification.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+          )}
+          <p className="text-xs font-semibold">{notification.message}</p>
+        </div>
+      )}
+
       {/* Main Table Card */}
       <div className="bg-white border border-slate-300 rounded-xl shadow-2xs overflow-hidden w-full">
         {/* Controls Bar */}
@@ -367,6 +553,23 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
                   <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-emerald-800/80 text-emerald-100 rounded-full">
                     {allowedGtkHeaders.length} Kolom
                   </span>
+                </button>
+              )}
+
+              {/* Impor Data Excel Button (Khusus Admin) */}
+              {!isUser && (
+                <button
+                  onClick={() => {
+                    setImportedStudents([]);
+                    setImportFileName('');
+                    setImportError(null);
+                    setIsImportModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-2xs transition-colors shrink-0 cursor-pointer"
+                  title="Impor data Biodata Peserta Didik (sheet data - 69 kolom)"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Impor Data Excel</span>
                 </button>
               )}
 
@@ -804,6 +1007,240 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
             }
           }}
         />
+      )}
+
+      {/* Modal Impor Biodata Peserta Didik (Sheet: data - 69 Kolom) */}
+      {!isUser && isImportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-200 shadow-2xs">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">
+                    Impor Biodata Peserta Didik (Sheet: data)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Format resmi 69 kolom Dapodik. Seluruh kolom diproses murni sebagai teks (string).
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (!isImporting) {
+                    setIsImportModalOpen(false);
+                    setImportedStudents([]);
+                    setImportFileName('');
+                    setImportError(null);
+                  }
+                }}
+                disabled={isImporting}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/60 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+              {/* Petunjuk & Download Template Bar */}
+              <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <FileSpreadsheet className="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" />
+                  <div className="text-xs text-indigo-950">
+                    <p className="font-semibold text-slate-800">
+                      Gunakan format 69 kolom resmi sheet &quot;data&quot; Dapodik:
+                    </p>
+                    <p className="text-slate-600 mt-0.5 text-[11px] leading-relaxed">
+                      Nama, NIPD, JK, NISN, t_lahir, tgl_lahir, NIK, Agama, Alamat, RT, RW, Dusun, Kelurahan, Kecamatan, kode_pos, jenis_tinggal, transportaso, Telepon, HP, email, SKHUN, kps, no_kps, nama_ayah, thn_lahir_ayah, pend_ayah, kerja_ayah, pengh_ayah, nik_ayah, nama_ibu, thn_lahir_ibu, pend_ibu, kerja_ibu, pengh_ibu, nik_ibu, namawali, thnwali, pendwali, pekwali, pengwali, nikwali, rombel, no_ujian, no_ijazah, kip, no_kip, nama_kip, no_kks, reg_akta, Bank, no_rek, rek_nama, layak_pip, alasan, keb_khusus, sekolah_asal, anak_ke, Lintang, Bujur, no_kk, berat_badan, tinggi_badan, lingkar_kepala, jum_saudara, jarak_sekolah, status, ket, timestamp, verval_oleh.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleDownloadDapodikTemplate}
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-100 text-indigo-700 font-semibold text-xs rounded-xl border border-indigo-300 shadow-2xs transition-colors shrink-0 cursor-pointer"
+                  title="Unduh format template Excel dengan 69 kolom teks"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Unduh Template (69 Kolom)</span>
+                </button>
+              </div>
+
+              {/* Upload Dropzone */}
+              <div>
+                <input
+                  ref={importFileInputRef}
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={handleImportFileChange}
+                  className="hidden"
+                />
+
+                {!importFileName ? (
+                  <div
+                    onClick={() => importFileInputRef.current?.click()}
+                    className="border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50 hover:bg-indigo-50/30 rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all group"
+                  >
+                    <div className="p-3 bg-white group-hover:bg-indigo-100 rounded-full border border-slate-200 text-indigo-600 mb-3 shadow-2xs transition-colors">
+                      <Upload className="w-6 h-6" />
+                    </div>
+                    <p className="text-sm font-bold text-slate-800">
+                      Klik untuk memilih file Excel (.xlsx / .xls)
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Pastikan file memiliki sheet bernama &quot;data&quot; dengan 69 kolom resmi Dapodik
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">
+                        <FileSpreadsheet className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">{importFileName}</p>
+                        <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">
+                          ✓ {importedStudents.length} baris peserta didik berhasil dibaca dari file
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportedStudents([]);
+                        setImportFileName('');
+                        setImportError(null);
+                        if (importFileInputRef.current) {
+                          importFileInputRef.current.value = '';
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg border border-slate-300 transition-colors cursor-pointer"
+                    >
+                      Ganti File
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Error Message Box */}
+              {importError && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-700 text-xs animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Gagal memproses file:</span> {importError}
+                  </div>
+                </div>
+              )}
+
+              {/* Preview Table */}
+              {importedStudents.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">
+                      Pratinjau Data Siswa ({importedStudents.length} siswa siap diimpor):
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Menampilkan maks. 50 data teratas
+                    </span>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-64 overflow-y-auto shadow-2xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200 z-10 font-bold">
+                        <tr>
+                          <th className="py-2.5 px-3 w-12 text-center">No</th>
+                          <th className="py-2.5 px-3 min-w-[150px]">Nama Siswa</th>
+                          <th className="py-2.5 px-3 min-w-[100px]">NIPD</th>
+                          <th className="py-2.5 px-3 min-w-[110px]">NISN</th>
+                          <th className="py-2.5 px-3 w-14 text-center">JK</th>
+                          <th className="py-2.5 px-3 min-w-[110px]">Rombel</th>
+                          <th className="py-2.5 px-3 min-w-[130px]">Tempat/Tgl Lahir</th>
+                          <th className="py-2.5 px-3 min-w-[130px]">NIK</th>
+                          <th className="py-2.5 px-3 w-24 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {importedStudents.slice(0, 50).map((st, i) => (
+                          <tr key={st.id || i} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-2 px-3 text-center text-slate-400 font-medium">{i + 1}</td>
+                            <td className="py-2 px-3 font-semibold text-slate-800">{st.nama || '-'}</td>
+                            <td className="py-2 px-3 text-slate-600 font-mono">{st.nipd || '-'}</td>
+                            <td className="py-2 px-3 text-slate-600 font-mono">{st.nisn || '-'}</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                st.jk === 'P' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {st.jk || 'L'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-slate-700 font-medium">{st.kelas || '-'}</td>
+                            <td className="py-2 px-3 text-slate-600">
+                              {st.tempatLahir ? `${st.tempatLahir}, ` : ''}{formatDate(st.tanggalLahir)}
+                            </td>
+                            <td className="py-2 px-3 text-slate-600 font-mono">{st.nik || '-'}</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                (st.status || 'Aktif') === 'Aktif'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}>
+                                {st.status || 'Aktif'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
+              <span className="text-[11px] text-slate-500 font-medium">
+                Tip: Semua angka NIK, NISN, NIPD diformat teks murni agar tidak terpotong.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    setImportedStudents([]);
+                    setImportFileName('');
+                    setImportError(null);
+                  }}
+                  disabled={isImporting}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyImport}
+                  disabled={importedStudents.length === 0 || isImporting}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {isImporting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Menyimpan ke Spreadsheet...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Terapkan & Simpan ({importedStudents.length} Data)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
