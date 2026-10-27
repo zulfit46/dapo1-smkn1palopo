@@ -28,7 +28,8 @@ import {
   ArrowLeftRight,
   BookOpen,
   Briefcase,
-  FileCheck
+  FileCheck,
+  Layers
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -63,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Accordion state: hanya satu grup menu yang terbuka pada satu waktu
   const [openMenu, setOpenMenu] = useState<'gtk' | 'peserta-didik' | 'rekap' | null>(() => {
     if (activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-gaji' || activeTab === 'gaji' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan' || activeTab === 'gtk-walikelas' || activeTab === 'walikelas' || activeTab === 'akses-menu') return 'gtk';
-    if (activeTab === 'biodata' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'mutasi' || activeTab === 'pip' || activeTab === 'surat' || activeTab === 'absen-pd') return 'peserta-didik';
+    if (activeTab === 'biodata' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'peserta-jurusan' || activeTab === 'jurusan' || activeTab === 'mutasi' || activeTab === 'pip' || activeTab === 'surat' || activeTab === 'absen-pd') return 'peserta-didik';
     if (activeTab === 'rekap' || activeTab === 'rekap-pd' || activeTab === 'rekap-gtk') return 'rekap';
     return null;
   });
@@ -86,7 +87,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const isGTKActive = activeTab === 'gtk' || activeTab === 'gtk-biodata' || activeTab === 'gtk-pangkat' || activeTab === 'gtk-kgb' || activeTab === 'gtk-gaji' || activeTab === 'gaji' || activeTab === 'gtk-pembelajaran' || activeTab === 'pembelajaran' || activeTab === 'gtk-tugas-tambahan' || activeTab === 'tugas-tambahan' || activeTab === 'gtk-walikelas' || activeTab === 'walikelas' || activeTab === 'akses-menu';
-  const isPesertaDidikActive = activeTab === 'biodata' || activeTab === 'absen-pd' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'mutasi' || activeTab === 'pip' || activeTab === 'surat' || activeTab === 'surat-pindah' || activeTab === 'surat-ket-siswa';
+  const isPesertaDidikActive = activeTab === 'biodata' || activeTab === 'absen-pd' || activeTab === 'registrasi' || activeTab === 'data-periodik' || activeTab === 'absen' || activeTab === 'peserta-jurusan' || activeTab === 'jurusan' || activeTab === 'mutasi' || activeTab === 'pip' || activeTab === 'surat' || activeTab === 'surat-pindah' || activeTab === 'surat-ket-siswa';
   const isRekapActive = activeTab === 'rekap' || activeTab === 'rekap-pd' || activeTab === 'rekap-gtk';
   const isUser = isUserRole(currentUser);
   const userWali = getWaliKelasForUser(currentUser, waliKelasList);
@@ -623,6 +624,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="truncate">Surat PD</span>
                       </div>
                       {(activeTab === 'surat' || activeTab === 'surat-pindah' || activeTab === 'surat-ket-siswa') && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                      )}
+                    </button>
+                  )}
+
+                  {/* Submenu: Jurusan */}
+                  {(isTabPermitted('peserta-jurusan', currentUser, waliKelasList) || isTabPermitted('jurusan', currentUser, waliKelasList)) && (
+                    <button
+                      onClick={() => handleNavClick('peserta-jurusan')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        activeTab === 'peserta-jurusan' || activeTab === 'jurusan'
+                          ? isGlass
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30 font-bold'
+                            : 'bg-indigo-600 text-white shadow-xs font-bold'
+                          : isGlass
+                            ? 'text-purple-300/70 hover:bg-white/10 hover:text-white'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Layers className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
+                        <span className="truncate">Jurusan</span>
+                      </div>
+                      {(activeTab === 'peserta-jurusan' || activeTab === 'jurusan') && (
                         <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
                       )}
                     </button>
