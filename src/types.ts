@@ -424,6 +424,8 @@ export type ActiveTab =
   | 'registrasi' 
   | 'data-periodik' 
   | 'absen' 
+  | 'peserta-jurusan'
+  | 'jurusan'
   | 'mutasi'
   | 'pip'
   | 'surat'
