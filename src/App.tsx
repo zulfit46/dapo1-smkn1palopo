@@ -601,6 +601,12 @@ export default function App() {
     fetchStudentsData(true);
   };
 
+  // Handle Impor Data Biodata Siswa Lengkap
+  const handleImportStudents = (newStudents: Student[]) => {
+    setStudents(newStudents);
+    safeSetItem('dapodik_cached_students', newStudents);
+  };
+
   // Handle GTK update (e.g. Akses Menu or Role)
   const handleUpdateGTK = (updatedGTK: GTKData) => {
     setGtkList(prev => {
@@ -721,9 +727,11 @@ export default function App() {
               waliKelasList={waliKelasList}
               jurusanList={jurusanList}
               webAppUrl={appConfig.webAppUrl}
+              appConfig={appConfig}
               currentUser={currentUser}
               allowedGtkHeaders={allowedGtkHeaders}
               onUpdateAllowedGtkHeaders={setAllowedGtkHeaders}
+              onImportStudents={handleImportStudents}
               onAddStudent={() => {
                 setEditingStudent(null);
                 setIsFormModalOpen(true);
