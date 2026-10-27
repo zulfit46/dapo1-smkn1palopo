@@ -192,6 +192,16 @@ export const DAFTAR_AKSES_MENU: MenuItemDefinition[] = [
     deskripsi: 'Penerbitan Surat Keterangan Pindah dan Surat Keterangan Siswa Aktif dengan Kop Resmi',
     contohInput: 'peserta_didik-surat'
   },
+  {
+    id: 'peserta_didik-jurusan',
+    kode: 'peserta_didik-jurusan',
+    nama: 'Jurusan',
+    kategori: 'Peserta Didik',
+    tab: 'peserta-jurusan',
+    aliases: ['peserta_didik-jurusan', 'peserta-didik-jurusan', 'jurusan', 'data-jurusan', 'daftar-jurusan', 'konsentrasi-keahlian', 'program-keahlian'],
+    deskripsi: 'Daftar kode, program keahlian, dan konsentrasi keahlian (data dari sheet jurusan)',
+    contohInput: 'peserta_didik-jurusan'
+  },
 
   // 4. REKAPITULASI
   {
@@ -421,6 +431,10 @@ export function isTabPermitted(
     if (tab === 'gtk-gaji' && parsedSet.has('gaji')) return true;
     if (tab === 'tugas-tambahan' && parsedSet.has('gtk-tugas-tambahan')) return true;
     if (tab === 'gtk-tugas-tambahan' && parsedSet.has('tugas-tambahan')) return true;
+    if (tab === 'peserta-jurusan' && parsedSet.has('jurusan')) return true;
+    if (tab === 'jurusan' && parsedSet.has('peserta-jurusan')) return true;
+    if (tab === 'gtk-walikelas' && parsedSet.has('walikelas')) return true;
+    if (tab === 'walikelas' && parsedSet.has('gtk-walikelas')) return true;
 
     return parsedSet.has(tab);
   }
@@ -463,6 +477,7 @@ export function isCategoryPermitted(
       isTabPermitted('gtk-gaji', currentUser, waliKelasList) ||
       isTabPermitted('gtk-pembelajaran', currentUser, waliKelasList) ||
       isTabPermitted('gtk-tugas-tambahan', currentUser, waliKelasList) ||
+      isTabPermitted('gtk-walikelas', currentUser, waliKelasList) ||
       isTabPermitted('akses-menu', currentUser, waliKelasList)
     );
   }
@@ -474,6 +489,8 @@ export function isCategoryPermitted(
       isTabPermitted('registrasi', currentUser, waliKelasList) ||
       isTabPermitted('data-periodik', currentUser, waliKelasList) ||
       isTabPermitted('absen', currentUser, waliKelasList) ||
+      isTabPermitted('peserta-jurusan', currentUser, waliKelasList) ||
+      isTabPermitted('jurusan', currentUser, waliKelasList) ||
       isTabPermitted('mutasi', currentUser, waliKelasList) ||
       isTabPermitted('pip', currentUser, waliKelasList) ||
       isTabPermitted('surat', currentUser, waliKelasList)
