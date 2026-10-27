@@ -3223,9 +3223,10 @@ async function startServer() {
     res.json({ status: "success", message: "Siswa berhasil ditambahkan", data: newStudent });
   });
 
-  // POST Import / Replace Full Student Dataset (Smart Merge from Excel)
+  // POST Import / Smart Merge or Replace Full Student Dataset (from Excel)
   app.post("/api/students/import", async (req, res) => {
     const rawList = req.body.students || req.body.items;
+    const mode = req.body.mode || 'merge';
     if (!Array.isArray(rawList)) {
       return res.status(400).json({ status: "error", message: "Data siswa yang diimpor tidak valid" });
     }
@@ -3238,24 +3239,55 @@ async function startServer() {
       return norm;
     });
 
-    studentList = [...importedStudents];
-    cachedSheetsData = [...importedStudents];
+    if (mode === 'merge' && req.body.rawUnmerged) {
+      // Server-side smart merge jika menerima raw list terpisah
+      importedStudents.forEach((imp) => {
+        const targetNisn = (imp.nisn || '').trim();
+        const targetNipd = (imp.nipd || '').trim();
+        const targetNama = (imp.nama || '').trim().toLowerCase();
+
+        const matchIdx = studentList.findIndex((s) => {
+          const sNisn = (s.nisn || '').trim();
+          const sNipd = (s.nipd || '').trim();
+          const sNama = (s.nama || '').trim().toLowerCase();
+          return (
+            (targetNisn && sNisn && targetNisn === sNisn) ||
+            (targetNipd && sNipd && targetNipd === sNipd) ||
+            (targetNama && sNama && targetNama === sNama && targetNama.length > 2)
+          );
+        });
+
+        if (matchIdx !== -1) {
+          studentList[matchIdx] = { ...studentList[matchIdx], ...imp, id: studentList[matchIdx].id };
+        } else {
+          studentList.push(imp);
+        }
+      });
+      cachedSheetsData = [...studentList];
+    } else {
+      studentList = [...importedStudents];
+      cachedSheetsData = [...importedStudents];
+    }
+
     appConfig.lastSyncedAt = new Date().toISOString();
 
     // Respond fast to UI
     res.json({
       status: "success",
-      message: `${importedStudents.length} data siswa berhasil diimpor & disimpan`,
+      message: mode === 'merge'
+        ? `${studentList.length} data siswa berhasil diproses dengan Smart Merge`
+        : `${importedStudents.length} data siswa berhasil diimpor & disimpan`,
       total: studentList.length
     });
 
     // Sync to Google Apps Script in background if configured
-    if (appConfig.webAppUrl && importedStudents.length > 0) {
+    if (appConfig.webAppUrl && studentList.length > 0) {
       sendToGas(appConfig.webAppUrl, {
         action: 'importAll',
         target: 'data',
-        students: importedStudents,
-        items: importedStudents
+        students: studentList,
+        items: studentList,
+        mode
       }, 45000)
       .then(gasRes => {
         console.log('[Student Import] Sync ke Google Apps Script berhasil:', gasRes.json || gasRes.status);
