@@ -2933,7 +2933,8 @@ export async function syncAllJurusanDirectly(
  */
 export async function syncAllStudentsDirectly(
   webAppUrl: string,
-  items: Student[]
+  items: Student[],
+  mode: 'merge' | 'replace' = 'merge'
 ): Promise<{ success: boolean; message: string }> {
   // Simpan seketika di local storage
   safeSetItem(LOCAL_STORAGE_STUDENTS_KEY, items);
@@ -2943,7 +2944,7 @@ export async function syncAllStudentsDirectly(
     const sRes = await fetch('/api/students/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ students: items }),
+      body: JSON.stringify({ students: items, mode }),
       signal: AbortSignal.timeout(35000)
     });
     if (sRes.ok) {
@@ -2966,7 +2967,8 @@ export async function syncAllStudentsDirectly(
       action: 'importAll',
       target: 'data',
       students: items,
-      items: items
+      items: items,
+      mode
     };
 
     const res = await fetch(webAppUrl, {
