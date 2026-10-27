@@ -99,6 +99,7 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
   const [importedStudents, setImportedStudents] = useState<Student[]>([]);
   const [importFileName, setImportFileName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge'); // Default: Smart Merge
   const [importError, setImportError] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
@@ -406,7 +407,56 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
     reader.readAsArrayBuffer(file);
   };
 
-  // Eksekusi Simpan Hasil Impor ke State & Google Sheets
+  // Helper untuk mencocokkan siswa berdasarkan NISN, NIPD, atau Nama
+  const findMatchingStudentIndex = (list: Student[], target: Student) => {
+    const targetNisn = (target.nisn || '').trim();
+    const targetNipd = (target.nipd || '').trim();
+    const targetNama = (target.nama || '').trim().toLowerCase();
+
+    return list.findIndex((s) => {
+      const sNisn = (s.nisn || '').trim();
+      const sNipd = (s.nipd || '').trim();
+      const sNama = (s.nama || '').trim().toLowerCase();
+
+      if (targetNisn && sNisn && targetNisn === sNisn) return true;
+      if (targetNipd && sNipd && targetNipd === sNipd) return true;
+      if (targetNama && sNama && targetNama === sNama && targetNama.length > 2) {
+        if (target.tanggalLahir && s.tanggalLahir) {
+          return target.tanggalLahir === s.tanggalLahir;
+        }
+        return true;
+      }
+      return false;
+    });
+  };
+
+  // Analisis statistik kecocokan data impor terhadap data saat ini
+  const importStats = useMemo(() => {
+    if (importedStudents.length === 0) {
+      return { matchingCount: 0, newCount: 0, existingCount: students.length, retainedCount: students.length, finalTotal: students.length };
+    }
+
+    let matching = 0;
+    importedStudents.forEach((imp) => {
+      const idx = findMatchingStudentIndex(students, imp);
+      if (idx !== -1) matching++;
+    });
+
+    const newCount = importedStudents.length - matching;
+    const existingCount = students.length;
+    const retainedCount = existingCount - matching;
+    const finalTotal = importMode === 'merge' ? existingCount + newCount : importedStudents.length;
+
+    return {
+      matchingCount: matching,
+      newCount,
+      existingCount,
+      retainedCount: retainedCount >= 0 ? retainedCount : 0,
+      finalTotal
+    };
+  }, [importedStudents, students, importMode]);
+
+  // Eksekusi Simpan Hasil Impor ke State & Google Sheets (Mendukung Smart Merge & Replace All)
   const handleApplyImport = async () => {
     if (importedStudents.length === 0) return;
 
@@ -414,18 +464,64 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
     setImportError(null);
 
     try {
+      let finalStudents: Student[] = [];
+
+      if (importMode === 'merge') {
+        // Smart Merge: Gabungkan data
+        const merged = [...students];
+        let updatedCount = 0;
+        let addedCount = 0;
+
+        importedStudents.forEach((imp, i) => {
+          const matchIdx = findMatchingStudentIndex(merged, imp);
+          if (matchIdx !== -1) {
+            // Perbarui data yang sudah ada, pertahankan id dan data verval jika di Excel kosong
+            const prev = merged[matchIdx];
+            merged[matchIdx] = {
+              ...prev,
+              ...imp,
+              id: prev.id,
+              status: imp.status || prev.status || 'Aktif',
+              ket: imp.ket || prev.ket || '',
+              timestamp: imp.timestamp || prev.timestamp || '',
+              vervalOleh: imp.vervalOleh || prev.vervalOleh || ''
+            };
+            updatedCount++;
+          } else {
+            // Tambahkan sebagai siswa baru
+            merged.push({
+              ...imp,
+              id: imp.id || imp.nipd || imp.nisn || `STU-${Date.now()}-${i + 1}`,
+              status: imp.status || 'Aktif'
+            });
+            addedCount++;
+          }
+        });
+        finalStudents = merged;
+      } else {
+        // Timpa Total (Replace All)
+        finalStudents = importedStudents.map((s, idx) => ({
+          ...s,
+          id: s.id || s.nipd || s.nisn || `STU-IMP-${idx + 1}`
+        }));
+      }
+
       // 1. Simpan ke state komponen induk & localStorage
       if (onImportStudents) {
-        onImportStudents(importedStudents);
+        onImportStudents(finalStudents);
       }
 
       // 2. Sinkronisasi ke Express Server (/api/students/import) & Google Sheets (sheet "data")
       const targetUrl = webAppUrl || appConfig?.webAppUrl || '';
-      const syncRes = await syncAllStudentsDirectly(targetUrl, importedStudents);
+      const syncRes = await syncAllStudentsDirectly(targetUrl, finalStudents);
+
+      const successMsg = importMode === 'merge'
+        ? (syncRes.message || `Smart Merge Berhasil! ${importStats.matchingCount} data diperbarui, ${importStats.newCount} siswa baru ditambahkan. Total: ${finalStudents.length} siswa.`)
+        : (syncRes.message || `Berhasil menimpa seluruh data dengan ${finalStudents.length} peserta didik dari Excel.`);
 
       setNotification({
         type: 'success',
-        message: syncRes.message || `Berhasil mengimpor dan memperbarui ${importedStudents.length} data peserta didik!`
+        message: successMsg
       });
 
       // Tutup modal setelah delay singkat
@@ -436,7 +532,7 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
         if (importFileInputRef.current) {
           importFileInputRef.current.value = '';
         }
-      }, 1200);
+      }, 1400);
     } catch (err: any) {
       setImportError(err?.message || 'Terjadi kesalahan saat menyimpan data impor ke server.');
     } finally {
@@ -1136,6 +1232,107 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
                 </div>
               )}
 
+              {/* Mode Pilihan Impor & Analisis Smart Merge */}
+              {importedStudents.length > 0 && (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-indigo-600" />
+                      <span>Metode Penggabungan Data:</span>
+                    </label>
+                    <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                      {importMode === 'merge' ? 'Mode: Smart Merge (Aman)' : 'Mode: Timpa Total'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Opsi 1: Smart Merge (Recommended) */}
+                    <div
+                      onClick={() => setImportMode('merge')}
+                      className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                        importMode === 'merge'
+                          ? 'bg-indigo-50/80 border-indigo-600 shadow-2xs'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          checked={importMode === 'merge'}
+                          onChange={() => setImportMode('merge')}
+                          className="mt-0.5 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-800">Smart Merge</span>
+                            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded">
+                              Direkomendasikan
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                            Memperbarui data yang cocok (NISN / NIPD / Nama) dan menambahkan siswa baru. Siswa lama yang tidak ada di file Excel <strong>tetap aman tersimpan (tidak dihapus)</strong>.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Opsi 2: Replace All */}
+                    <div
+                      onClick={() => setImportMode('replace')}
+                      className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                        importMode === 'replace'
+                          ? 'bg-rose-50/80 border-rose-500 shadow-2xs'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          checked={importMode === 'replace'}
+                          onChange={() => setImportMode('replace')}
+                          className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-slate-800">Timpa Total (Replace All)</span>
+                          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                            Mengganti seluruh daftar siswa hanya dengan data yang ada di file Excel ini saja. Data siswa lama yang tidak ada di file <strong>akan terhapus</strong>.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Ringkasan Analisis Data */}
+                  <div className="p-3 bg-white border border-slate-200 rounded-lg flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                        <span className="text-slate-600">Di Excel: <strong className="text-slate-800">{importedStudents.length}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                        <span className="text-slate-600">Akan Diperbarui: <strong className="text-amber-700">{importStats.matchingCount}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <span className="text-slate-600">Siswa Baru: <strong className="text-emerald-700">{importStats.newCount}</strong></span>
+                      </div>
+                      {importMode === 'merge' && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                          <span className="text-slate-600">Siswa Lama Aman: <strong className="text-slate-700">{importStats.retainedCount}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200">
+                      Total Akhir: {importStats.finalTotal} Siswa
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Preview Table */}
               {importedStudents.length > 0 && (
                 <div className="space-y-2">
@@ -1223,17 +1420,24 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
                   type="button"
                   onClick={handleApplyImport}
                   disabled={importedStudents.length === 0 || isImporting}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className={`inline-flex items-center gap-1.5 px-4 py-2 text-white text-xs font-bold rounded-xl shadow-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                    importMode === 'merge' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
                 >
                   {isImporting ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
                       <span>Menyimpan ke Spreadsheet...</span>
                     </>
+                  ) : importMode === 'merge' ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Terapkan Smart Merge (Total: {importStats.finalTotal} Siswa)</span>
+                    </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Terapkan & Simpan ({importedStudents.length} Data)</span>
+                      <span>Terapkan Timpa Total ({importedStudents.length} Data)</span>
                     </>
                   )}
                 </button>
