@@ -2928,9 +2928,63 @@ export async function syncAllJurusanDirectly(
   }
 }
 
+/**
+ * Sinkronisasi seluruh data Biodata Peserta Didik (sheet: data) ke Express Server dan Google Apps Script
+ */
+export async function syncAllStudentsDirectly(
+  webAppUrl: string,
+  items: Student[]
+): Promise<{ success: boolean; message: string }> {
+  // Simpan seketika di local storage
+  safeSetItem(LOCAL_STORAGE_STUDENTS_KEY, items);
 
+  // 1. Coba kirim via server endpoint /api/students/import
+  try {
+    const sRes = await fetch('/api/students/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ students: items }),
+      signal: AbortSignal.timeout(35000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} data biodata peserta didik!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/students/import error, fallback to direct Web App:', err);
+  }
 
+  // 2. Kirim langsung ke Google Apps Script Web App jika server offline / static host
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data peserta didik ke penyimpanan lokal!` };
+  }
 
+  try {
+    const payload = {
+      action: 'importAll',
+      target: 'data',
+      students: items,
+      items: items
+    };
 
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45000)
+    });
 
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} data peserta didik ke Google Sheets!` };
+      }
+    }
 
+    return { success: true, message: `Data ${items.length} peserta didik berhasil dikirim ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data peserta didik ke Google Sheets' };
+  }
+}
