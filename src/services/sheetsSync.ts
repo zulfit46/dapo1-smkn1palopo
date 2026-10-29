@@ -1,4 +1,4 @@
-import { Student, AppConfig, GTKData, RiwayatPangkat, RiwayatKGB, MutasiMasukItem, MutasiKeluarItem, PembelajaranData, GajiData, PIPData, WaliKelas, Jurusan, normalizeStudent } from '../types';
+import { Student, AppConfig, GTKData, RiwayatPangkat, RiwayatKGB, MutasiMasukItem, MutasiKeluarItem, PembelajaranData, GajiData, PIPData, WaliKelas, Jurusan, DesilData, normalizeStudent } from '../types';
 import { SPREADSHEET_ID, SHEET_NAME, SHEET_NAME_GTK, SHEET_NAME_NAIKPANGKAT, SHEET_NAME_KGB, SHEET_NAME_MUTASI_MASUK, SHEET_NAME_MUTASI_KELUAR, SHEET_NAME_PEMBELAJARAN, SHEET_NAME_GAJI, SHEET_NAME_WALIKELAS, SHEET_NAME_JURUSAN, DRIVE_FOLDER_ID_MUTASI_KELUAR } from '../data/codeGsScript';
 import { INITIAL_PEMBELAJARAN_LIST } from '../data/initialPembelajaran';
 import { INITIAL_GAJI_LIST } from '../data/initialGaji';
@@ -19,6 +19,7 @@ const LOCAL_STORAGE_PEMBELAJARAN_KEY = 'dapodik_cached_pembelajaran';
 const LOCAL_STORAGE_GAJI_KEY = 'dapodik_cached_gaji';
 export const LOCAL_STORAGE_WALIKELAS_KEY = 'dapodik_cached_walikelas';
 export const LOCAL_STORAGE_JURUSAN_KEY = 'dapodik_cached_jurusan';
+export const LOCAL_STORAGE_DESIL_KEY = 'dapodik_cached_desil';
 const LOCAL_STORAGE_CONFIG_KEY = 'dapodik_app_config';
 
 /**
@@ -680,17 +681,42 @@ export async function savePangkatDirectly(
 }
 
 /**
- * Sync all Riwayat Pangkat directly to Google Apps Script Web App
+ * Sync all Riwayat Pangkat directly to Google Apps Script Web App or Express server
  */
 export async function syncAllPangkatDirectly(
   webAppUrl: string,
-  items: RiwayatPangkat[]
-): Promise<boolean> {
-  if (!webAppUrl || !items.length) return false;
+  items: RiwayatPangkat[],
+  mode: 'merge' | 'replace' = 'merge'
+): Promise<{ success: boolean; message: string }> {
+  safeSetItem(LOCAL_STORAGE_PANGKAT_KEY, items);
+
+  // 1. Coba lewat Express backend API
+  try {
+    const sRes = await fetch('/api/pangkat/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(35000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} riwayat kepangkatan!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/pangkat/import error, fallback to direct Web App:', err);
+  }
+
+  if (!webAppUrl || !items.length) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data kepangkatan ke penyimpanan lokal!` };
+  }
+
   try {
     const payload = {
       action: 'syncAll',
       target: 'naikpangkat',
+      mode,
       items: items.map((p, idx) => {
         const formattedTglSk = formatToDDMMYYYY(p.tglSk || '');
         const formattedTmt = formatToDDMMYYYY(p.tmt || '');
@@ -718,12 +744,12 @@ export async function syncAllPangkatDirectly(
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
       mode: 'no-cors',
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(10000)
     });
-    return true;
-  } catch (err) {
+    return { success: true, message: `Berhasil menyinkronkan ${items.length} data kepangkatan ke Google Sheets!` };
+  } catch (err: any) {
     console.warn('Direct Google Apps Script syncAll pangkat failed:', err);
-    return false;
+    return { success: false, message: err?.message || 'Gagal mengirim data kepangkatan ke Google Sheets' };
   }
 }
 
@@ -950,17 +976,42 @@ export async function saveKGBDirectly(
 }
 
 /**
- * Sync all Riwayat KGB directly to Google Apps Script Web App
+ * Sync all Riwayat KGB directly to Google Apps Script Web App or Express server
  */
 export async function syncAllKGBDirectly(
   webAppUrl: string,
-  items: RiwayatKGB[]
-): Promise<boolean> {
-  if (!webAppUrl || !items.length) return false;
+  items: RiwayatKGB[],
+  mode: 'merge' | 'replace' = 'merge'
+): Promise<{ success: boolean; message: string }> {
+  safeSetItem(LOCAL_STORAGE_KGB_KEY, items);
+
+  // 1. Coba lewat Express backend API
+  try {
+    const sRes = await fetch('/api/kgb/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(35000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} riwayat KGB!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/kgb/import error, fallback to direct Web App:', err);
+  }
+
+  if (!webAppUrl || !items.length) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data KGB ke penyimpanan lokal!` };
+  }
+
   try {
     const payload = {
       action: 'syncAll',
       target: 'kgb',
+      mode,
       items: items.map((k, idx) => {
         const formattedTglSk = formatToDDMMYYYY(k.tglSk || '');
         const formattedTmt = formatToDDMMYYYY(k.tmt || '');
@@ -992,12 +1043,12 @@ export async function syncAllKGBDirectly(
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
       mode: 'no-cors',
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(10000)
     });
-    return true;
-  } catch (err) {
+    return { success: true, message: `Berhasil menyinkronkan ${items.length} data KGB ke Google Sheets!` };
+  } catch (err: any) {
     console.warn('Direct Google Apps Script syncAll KGB failed:', err);
-    return false;
+    return { success: false, message: err?.message || 'Gagal mengirim data KGB ke Google Sheets' };
   }
 }
 
@@ -1345,9 +1396,28 @@ export async function deleteMutasiMasukDirectly(
  */
 export async function syncAllMutasiMasukDirectly(
   webAppUrl: string,
-  items: MutasiMasukItem[]
+  items: MutasiMasukItem[],
+  mode: 'merge' | 'replace' = 'merge'
 ): Promise<boolean> {
-  if (!webAppUrl || !items.length) return false;
+  if (!items.length) return false;
+
+  // 1. Coba lewat server proxy Express
+  try {
+    const sRes = await fetch('/api/mutasi/masuk/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (sRes.ok) {
+      return true;
+    }
+  } catch (e) {
+    console.warn('Proxy /api/mutasi/masuk/import warning:', e);
+  }
+
+  // 2. Direct fallback ke Google Apps Script Web App
+  if (!webAppUrl) return true;
   try {
     const payload = {
       action: 'syncAllMutasiMasuk',
@@ -1369,14 +1439,15 @@ export async function syncAllMutasiMasukDirectly(
         tgl_masuk: formatToDDMMYYYY(m.tglMasuk || m.timestamp || ''),
         tglmasuk: formatToDDMMYYYY(m.tglMasuk || m.timestamp || ''),
         tanggal_masuk: formatToDDMMYYYY(m.tglMasuk || m.timestamp || '')
-      }))
+      })),
+      mode
     };
     await fetch(webAppUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
       mode: 'no-cors',
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(15000)
     });
     return true;
   } catch (err) {
@@ -1754,9 +1825,28 @@ export async function deleteMutasiBerkasFromDrive(
  */
 export async function syncAllMutasiKeluarDirectly(
   webAppUrl: string,
-  items: MutasiKeluarItem[]
+  items: MutasiKeluarItem[],
+  mode: 'merge' | 'replace' = 'merge'
 ): Promise<boolean> {
-  if (!webAppUrl || !items.length) return false;
+  if (!items.length) return false;
+
+  // 1. Coba lewat server proxy Express
+  try {
+    const sRes = await fetch('/api/mutasi/keluar/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (sRes.ok) {
+      return true;
+    }
+  } catch (e) {
+    console.warn('Proxy /api/mutasi/keluar/import warning:', e);
+  }
+
+  // 2. Direct fallback ke Google Apps Script Web App
+  if (!webAppUrl) return true;
   try {
     const payload = {
       action: 'syncAllMutasiKeluar',
@@ -1777,14 +1867,15 @@ export async function syncAllMutasiKeluarDirectly(
         status: m.status || 'Selesai',
         verval_oleh: m.verval_oleh || m.vervalOleh || '',
         timestamp: m.timestamp || new Date().toISOString().replace('T', ' ').substring(0, 19)
-      }))
+      })),
+      mode
     };
     await fetch(webAppUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
       mode: 'no-cors',
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(15000)
     });
     return true;
   } catch (err) {
@@ -2348,42 +2439,6 @@ export async function saveGajiDirectly(
 }
 
 /**
- * Sync all Gaji rows directly to Google Apps Script Web App
- */
-export async function syncAllGajiDirectly(
-  webAppUrl: string,
-  items: GajiData[]
-): Promise<boolean> {
-  if (!webAppUrl || !items.length) return false;
-  try {
-    const payload = {
-      action: 'syncAllGaji',
-      target: 'gaji',
-      items: items.map((g, idx) => ({
-        no: g.no || idx + 1,
-        nip: g.nip || '',
-        nama: g.nama || '',
-        bulan: g.bulan || '',
-        gaji_pokok: g.gaji_pokok || g.gajiPokok || 0,
-        jum_kotor: g.jum_kotor || g.jumKotor || 0,
-        jum_bersih: g.jum_bersih || g.jumBersih || 0
-      }))
-    };
-    await fetch(webAppUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-      mode: 'no-cors',
-      signal: AbortSignal.timeout(10000)
-    });
-    return true;
-  } catch (err) {
-    console.warn('Direct Google Apps Script syncAllGaji failed:', err);
-    return false;
-  }
-}
-
-/**
  * Delete single Gaji row from Google Sheets
  */
 export async function deleteGajiDirectly(
@@ -2585,8 +2640,354 @@ export async function savePIPDirectly(
 }
 
 /**
+ * Sinkronisasi seluruh data Usulan PIP (sheet: pip) ke Express Server dan Google Apps Script
+ */
+export async function syncAllPIPDirectly(
+  webAppUrl: string,
+  items: PIPData[],
+  mode: 'merge' | 'replace' = 'merge'
+): Promise<{ success: boolean; message: string }> {
+  // Simpan seketika di local storage
+  safeSetItem(LOCAL_STORAGE_PIP_KEY, items);
+
+  // 1. Coba kirim via server endpoint /api/pip/import
+  try {
+    const sRes = await fetch('/api/pip/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(35000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} data usulan PIP!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/pip/import error, fallback to direct Web App:', err);
+  }
+
+  // 2. Kirim langsung ke Google Apps Script Web App jika server offline / static host
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data usulan PIP ke penyimpanan lokal!` };
+  }
+
+  try {
+    const payload = {
+      action: 'importAllPIP',
+      target: 'pip',
+      items: items.map(p => ({
+        nisn: String(p.nisn || '').trim(),
+        nama: String(p.nama || '').trim(),
+        nama_murid: String(p.nama || '').trim(),
+        alasan_layak: String(p.alasan_layak || p.alasanLayak || '').trim(),
+        alasan_usul: String(p.alasan_layak || p.alasanLayak || '').trim(),
+        status: String(p.status || 'Belum diusul').trim()
+      })),
+      mode
+    };
+
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(35000)
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} data usulan PIP ke Google Sheets!` };
+      }
+    }
+
+    return { success: true, message: `Data ${items.length} usulan PIP berhasil dikirim ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data usulan PIP ke Google Sheets' };
+  }
+}
+
+/**
+ * Mengambil data Desil dari sheet "desil" (headers: nisn, desil)
+ */
+export async function fetchDesilDirectly(
+  webAppUrl?: string,
+  spreadsheetId?: string,
+  forceRefresh: boolean = false
+): Promise<DesilData[]> {
+  const cached = safeGetItem<DesilData[]>(LOCAL_STORAGE_DESIL_KEY, []);
+  if (!forceRefresh && cached && cached.length > 0) {
+    return cached;
+  }
+  const ssId = spreadsheetId || SPREADSHEET_ID;
+
+  // 1. Coba lewat Express backend API (/api/desil)
+  try {
+    const sRes = await fetch(`/api/desil${forceRefresh ? '?force=true' : ''}`, { signal: AbortSignal.timeout(10000) });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson && sJson.status === 'success' && Array.isArray(sJson.data) && sJson.data.length > 0) {
+        safeSetItem(LOCAL_STORAGE_DESIL_KEY, sJson.data);
+        return sJson.data;
+      }
+    }
+  } catch {}
+
+  // 2. Coba lewat Google Sheets GViz API (sheet: desil)
+  if (ssId) {
+    try {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&sheet=desil&_t=${Date.now()}`;
+      const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(12000) });
+      if (res.ok) {
+        const text = await res.text();
+        const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+        if (jsonText) {
+          const parsed = JSON.parse(jsonText);
+          const rawRows = parsed.table?.rows || [];
+          const cols = parsed.table?.cols || [];
+          if (rawRows.length > 0) {
+            let headerRow: string[] = [];
+            let startIdx = 0;
+            const hasColLabels = cols.some((c: any) => c.label && c.label.trim() !== '');
+            if (hasColLabels) {
+              headerRow = cols.map((c: any) => String(c.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+              startIdx = 0;
+            } else {
+              headerRow = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '') || [];
+              startIdx = 1;
+            }
+
+            const nisnIdx = headerRow.indexOf('nisn') >= 0 ? headerRow.indexOf('nisn') : 0;
+            const desilIdx = headerRow.indexOf('desil') >= 0 ? headerRow.indexOf('desil') : 1;
+            const ketPipIdx = headerRow.findIndex(h => h === 'ketpip' || h === 'ket_pip' || h === 'pip' || h === 'keteranganpip');
+
+            const list: DesilData[] = [];
+            for (let i = startIdx; i < rawRows.length; i++) {
+              const row = rawRows[i]?.c;
+              if (!row) continue;
+              const nisn = row[nisnIdx]?.v !== null && row[nisnIdx]?.v !== undefined ? String(row[nisnIdx].f || row[nisnIdx].v).trim() : '';
+              const desil = row[desilIdx]?.v !== null && row[desilIdx]?.v !== undefined ? String(row[desilIdx].f || row[desilIdx].v).trim() : '';
+              const ket_pip = ketPipIdx >= 0 && row[ketPipIdx]?.v !== null && row[ketPipIdx]?.v !== undefined ? String(row[ketPipIdx].f || row[ketPipIdx].v).trim() : '';
+              if (nisn) {
+                list.push({ nisn, desil, ket_pip, rowIndex: i + 1 });
+              }
+            }
+
+            if (list.length > 0) {
+              safeSetItem(LOCAL_STORAGE_DESIL_KEY, list);
+              return list;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('GViz fetch desil error:', err);
+    }
+  }
+
+  // 3. Fallback: Google Apps Script Web App (?sheet=desil)
+  if (webAppUrl) {
+    try {
+      const url = webAppUrl + (webAppUrl.includes('?') ? '&' : '?') + 'sheet=desil&target=desil&_t=' + Date.now();
+      const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+          const list: DesilData[] = json.data.map((item: any, idx: number) => ({
+            nisn: String(item.nisn || item.NISN || '').trim(),
+            desil: String(item.desil || item.Desil || '').trim(),
+            ket_pip: String(item.ket_pip || item.ketPip || item.Ket_PIP || item.ket_PIP || '').trim(),
+            rowIndex: item.rowIndex || idx + 2
+          })).filter((d: DesilData) => Boolean(d.nisn));
+
+          safeSetItem(LOCAL_STORAGE_DESIL_KEY, list);
+          return list;
+        }
+      }
+    } catch (gasErr) {
+      console.warn('GAS fetch desil error:', gasErr);
+    }
+  }
+
+  return safeGetItem<DesilData[]>(LOCAL_STORAGE_DESIL_KEY, []);
+}
+
+/**
+ * Menyimpan data Keterangan Desil & Ket. PIP per siswa ke Google Sheets (sheet: desil) dan server
+ */
+export async function saveDesilDirectly(
+  webAppUrl: string,
+  nisn: string,
+  desilOrObj: string | { desil?: string; ket_pip?: string },
+  optionalKetPip?: string
+): Promise<{ success: boolean; message: string }> {
+  const cleanNisn = String(nisn || '').trim();
+  let desilVal: string | undefined = undefined;
+  let ketPipVal: string | undefined = undefined;
+
+  if (typeof desilOrObj === 'object' && desilOrObj !== null) {
+    desilVal = desilOrObj.desil !== undefined ? String(desilOrObj.desil).trim() : undefined;
+    ketPipVal = desilOrObj.ket_pip !== undefined ? String(desilOrObj.ket_pip).trim() : undefined;
+  } else {
+    desilVal = desilOrObj !== undefined ? String(desilOrObj).trim() : undefined;
+    ketPipVal = optionalKetPip !== undefined ? String(optionalKetPip).trim() : undefined;
+  }
+
+  // Update local cache first
+  const currentList = safeGetItem<DesilData[]>(LOCAL_STORAGE_DESIL_KEY, []);
+  const existingIdx = currentList.findIndex(d => String(d.nisn).trim() === cleanNisn);
+  let updatedList: DesilData[];
+  if (existingIdx >= 0) {
+    updatedList = currentList.map((d, idx) => {
+      if (idx === existingIdx) {
+        return {
+          ...d,
+          desil: desilVal !== undefined ? desilVal : d.desil,
+          ket_pip: ketPipVal !== undefined ? ketPipVal : d.ket_pip
+        };
+      }
+      return d;
+    });
+  } else {
+    updatedList = [...currentList, { nisn: cleanNisn, desil: desilVal || '', ket_pip: ketPipVal || '' }];
+  }
+  safeSetItem(LOCAL_STORAGE_DESIL_KEY, updatedList);
+
+  const finalItem = updatedList.find(d => String(d.nisn).trim() === cleanNisn);
+  const payloadData = {
+    nisn: cleanNisn,
+    desil: finalItem?.desil || '',
+    ket_pip: finalItem?.ket_pip || ''
+  };
+
+  // 1. Coba lewat backend server /api/desil
+  try {
+    const sRes = await fetch('/api/desil', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payloadData),
+      signal: AbortSignal.timeout(12000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson && sJson.status === 'success') {
+        return { success: true, message: sJson.message || 'Data keterangan desil & PIP berhasil disimpan' };
+      }
+    }
+  } catch (proxyErr) {
+    console.warn('Proxy /api/desil save error:', proxyErr);
+  }
+
+  // 2. Direct fallback ke Google Apps Script Web App
+  if (!webAppUrl) return { success: true, message: 'Tersimpan di cache browser' };
+  try {
+    const payload = {
+      action: 'saveDesil',
+      target: 'desil',
+      ...payloadData
+    };
+    await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      mode: 'no-cors',
+      signal: AbortSignal.timeout(10000)
+    });
+    return { success: true, message: 'Keterangan desil & PIP berhasil dikirim ke Google Sheets (sheet: desil)' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim desil ke Google Sheets' };
+  }
+}
+
+/**
+ * Sinkronisasi seluruh data Desil ke Google Sheets (sheet: desil)
+ */
+export async function syncAllDesilDirectly(
+  webAppUrl: string,
+  items: DesilData[],
+  mode: 'merge' | 'replace' = 'merge'
+): Promise<{ success: boolean; message: string }> {
+  safeSetItem(LOCAL_STORAGE_DESIL_KEY, items);
+
+  try {
+    const sRes = await fetch('/api/desil/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(35000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil menyimpan ${items.length} data desil!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/desil/import error, fallback to direct Web App:', err);
+  }
+
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil menyimpan ${items.length} data desil ke penyimpanan lokal!` };
+  }
+
+  try {
+    const payload = {
+      action: 'syncAllDesil',
+      target: 'desil',
+      items,
+      desil: items
+    };
+
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(35000)
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} data desil ke Google Sheets!` };
+      }
+    }
+
+    return { success: true, message: `Data ${items.length} desil berhasil dikirim ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data desil ke Google Sheets' };
+  }
+}
+
+/**
  * Mengambil data Wali Kelas dari sheet "walikelas" (headers: kelas, nama, nip)
  */
+/**
+ * Memvalidasi apakah daftar wali kelas benar-benar data guru wali kelas dan BUKAN data siswa
+ */
+export function isValidWaliKelasList(list: any[]): boolean {
+  if (!Array.isArray(list) || list.length === 0) return false;
+
+  // 1. Cek apakah ada kolom siswa
+  const hasStudentData = list.some(item => 
+    !item || item.nisn || item.nipd || item.nik || item.t_lahir || item.tempatLahir || item.nama_ayah || item.ibu
+  );
+  if (hasStudentData) return false;
+
+  // 2. Cek duplikasi rombel massal: wali kelas per rombel biasanya 1 (maksimal 2)
+  const classCount: Record<string, number> = {};
+  for (const item of list) {
+    if (!item.kelas || !item.nama) return false;
+    const k = String(item.kelas).trim().toUpperCase();
+    classCount[k] = (classCount[k] || 0) + 1;
+    if (classCount[k] > 2) {
+      return false; // Rombel yang sama berulang lebih dari 2 kali adalah indikasi kuat baris siswa!
+    }
+  }
+
+  return true;
+}
+
 export async function fetchWaliKelasFromSheet(
   webAppUrl?: string, 
   spreadsheetId?: string,
@@ -2597,17 +2998,18 @@ export async function fetchWaliKelasFromSheet(
 
   // 1. Coba dari Express backend (/api/walikelas)
   try {
-    const bRes = await fetch('/api/walikelas', { signal: AbortSignal.timeout(6000) });
+    const bRes = await fetch(`/api/walikelas${force ? '?force=true' : ''}`, { signal: AbortSignal.timeout(6000) });
     if (bRes.ok) {
       const bJson = await bRes.json();
-      if (bJson?.status === 'success' && Array.isArray(bJson.data) && bJson.data.length > 0) {
-        safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, bJson.data);
-        return bJson.data;
+      const rawList = Array.isArray(bJson?.list) ? bJson.list : (Array.isArray(bJson?.data) ? bJson.data : []);
+      if (isValidWaliKelasList(rawList)) {
+        safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, rawList);
+        return rawList;
       }
     }
   } catch {}
 
-  // 2. Coba dari Google Apps Script Web App (?sheet=walikelas)
+  // 2. Coba dari Google Apps Script Web App (?sheet=walikelas&target=walikelas)
   if (activeWebAppUrl) {
     try {
       const url = `${activeWebAppUrl}${activeWebAppUrl.includes('?') ? '&' : '?'}sheet=walikelas&target=walikelas&_t=${Date.now()}`;
@@ -2615,15 +3017,19 @@ export async function fetchWaliKelasFromSheet(
       if (res.ok) {
         const json = await res.json().catch(() => null);
         if (json?.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
-          const mapped: WaliKelas[] = json.data.map((r: any) => ({
-            kelas: String(r.kelas || r.Kelas || r.rombel || '').trim(),
-            nama: String(r.nama || r.Nama || '').trim(),
-            nip: String(r.nip || r.NIP || '').trim(),
-          })).filter((w: WaliKelas) => w.kelas && w.nama);
+          // Pastikan bukan fallback data siswa dari Apps Script
+          const isStudent = json.target === 'data' || json.data.some((r: any) => r.nisn || r.nipd || r.t_lahir);
+          if (!isStudent) {
+            const mapped: WaliKelas[] = json.data.map((r: any) => ({
+              kelas: String(r.kelas || r.Kelas || r.rombel || '').trim(),
+              nama: String(r.nama || r.Nama || r.walikelas || '').trim(),
+              nip: String(r.nip || r.NIP || '').trim(),
+            })).filter((w: WaliKelas) => w.kelas && w.nama && w.kelas.toLowerCase() !== 'kelas');
 
-          if (mapped.length > 0) {
-            safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, mapped);
-            return mapped;
+            if (isValidWaliKelasList(mapped)) {
+              safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, mapped);
+              return mapped;
+            }
           }
         }
       }
@@ -2649,15 +3055,25 @@ export async function fetchWaliKelasFromSheet(
               let startIdx = 0;
               const hasColLabels = cols.some((c: any) => c.label && c.label.trim() !== '');
               if (hasColLabels) {
-                headers = cols.map((c: any) => String(c.label || '').trim().toLowerCase());
+                headers = cols.map((c: any) => String(c.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
                 startIdx = 0;
               } else {
-                headers = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase() : '') || [];
+                headers = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '') || [];
                 startIdx = 1;
               }
 
+              // Safety check: jika kolom mengindikasikan sheet data siswa, abaikan sheet ini!
+              const isStudentSheet = headers.some(h => 
+                h === 'nisn' || h === 'nipd' || h === 'tlahir' || h === 'tgllahir' || 
+                h === 'namaayah' || h === 'namaibu' || h === 'nik' || h === 'nokps' || h === 'regakta'
+              );
+              if (isStudentSheet) {
+                console.warn(`[WaliKelas] Sheet "${sheetName}" adalah data siswa (fallback GViz). Mengabaikan.`);
+                continue;
+              }
+
               const kelasIdx = headers.findIndex(h => h === 'kelas' || h === 'rombel');
-              const namaIdx = headers.findIndex(h => h === 'nama' || h === 'walikelas' || h === 'nama_wali');
+              const namaIdx = headers.findIndex(h => h === 'nama' || h === 'walikelas' || h === 'namawali');
               const nipIdx = headers.findIndex(h => h === 'nip');
 
               const parsedList: WaliKelas[] = [];
@@ -2672,12 +3088,12 @@ export async function fetchWaliKelasFromSheet(
                 const k = getVal(kelasIdx >= 0 ? kelasIdx : 0);
                 const n = getVal(namaIdx >= 0 ? namaIdx : 1);
                 const p = getVal(nipIdx >= 0 ? nipIdx : 2);
-                if (k && n) {
+                if (k && n && k.toLowerCase() !== 'kelas') {
                   parsedList.push({ kelas: k, nama: n, nip: p });
                 }
               }
 
-              if (parsedList.length > 0) {
+              if (isValidWaliKelasList(parsedList)) {
                 safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, parsedList);
                 return parsedList;
               }
@@ -2690,7 +3106,13 @@ export async function fetchWaliKelasFromSheet(
 
   // 4. Fallback ke local storage / initial data
   const cached = safeGetItem<WaliKelas[]>(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
-  return Array.isArray(cached) && cached.length > 0 ? cached : INITIAL_WALI_KELAS_LIST;
+  if (isValidWaliKelasList(cached)) {
+    return cached;
+  }
+
+  // Jika cache lokal tercemar data siswa, bersihkan dan pulihkan ke INITIAL_WALI_KELAS_LIST
+  safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
+  return INITIAL_WALI_KELAS_LIST;
 }
 
 /**
@@ -2990,3 +3412,248 @@ export async function syncAllStudentsDirectly(
     return { success: false, message: err?.message || 'Gagal mengirim data peserta didik ke Google Sheets' };
   }
 }
+
+/**
+ * Sinkronisasi seluruh data GTK (sheet: gtk) ke Express Server dan Google Apps Script
+ */
+export async function syncAllGTKDirectly(
+  webAppUrl: string,
+  items: GTKData[],
+  mode: 'merge' | 'replace' = 'merge'
+): Promise<{ success: boolean; message: string }> {
+  safeSetItem(LOCAL_STORAGE_GTK_KEY, items);
+
+  // 1. Coba lewat Express backend API
+  try {
+    const sRes = await fetch('/api/gtk/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(40000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} data GTK!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/gtk/import error, fallback to direct Web App:', err);
+  }
+
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data GTK ke penyimpanan lokal!` };
+  }
+
+  try {
+    const payload = {
+      action: 'syncAll',
+      target: 'gtk',
+      gtk: items,
+      data: items,
+      mode
+    };
+
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45000)
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} data GTK ke Google Sheets!` };
+      }
+    }
+
+    return { success: true, message: `Data ${items.length} GTK berhasil dikirim ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data GTK ke Google Sheets' };
+  }
+}
+
+/**
+ * Sinkronisasi seluruh data Gaji GTK (sheet: gaji) ke Express Server dan Google Apps Script
+ */
+export async function syncAllGajiDirectly(
+  webAppUrl: string,
+  items: GajiData[],
+  mode: 'merge' | 'replace' = 'merge'
+): Promise<{ success: boolean; message: string }> {
+  safeSetItem(LOCAL_STORAGE_GAJI_KEY, items);
+
+  // 1. Coba lewat Express backend API
+  try {
+    const sRes = await fetch('/api/gaji/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(35000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} data gaji GTK!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/gaji/import error, fallback to direct Web App:', err);
+  }
+
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data gaji ke penyimpanan lokal!` };
+  }
+
+  try {
+    const payload = {
+      action: 'syncAll',
+      target: 'gaji',
+      items,
+      gaji: items,
+      mode
+    };
+
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(35000)
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} data gaji ke Google Sheets!` };
+      }
+    }
+
+    return { success: true, message: `Data ${items.length} gaji berhasil dikirim ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data gaji ke Google Sheets' };
+  }
+}
+
+/**
+ * Sinkronisasi seluruh data Pembelajaran (sheet: pembelajaran) ke Express Server dan Google Apps Script
+ */
+export async function syncAllPembelajaranDirectly(
+  webAppUrl: string,
+  items: PembelajaranData[],
+  mode: 'merge' | 'replace' = 'merge'
+): Promise<{ success: boolean; message: string }> {
+  safeSetItem(LOCAL_STORAGE_PEMBELAJARAN_KEY, items);
+
+  // 1. Coba lewat Express backend API
+  try {
+    const sRes = await fetch('/api/pembelajaran/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(40000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} jadwal pembelajaran!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/pembelajaran/import error, fallback to direct Web App:', err);
+  }
+
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} jadwal pembelajaran ke penyimpanan lokal!` };
+  }
+
+  try {
+    const payload = {
+      action: 'syncAll',
+      target: 'pembelajaran',
+      items,
+      pembelajaran: items,
+      mode
+    };
+
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(40000)
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} jadwal pembelajaran ke Google Sheets!` };
+      }
+    }
+
+    return { success: true, message: `Data ${items.length} pembelajaran berhasil dikirim ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data pembelajaran ke Google Sheets' };
+  }
+}
+
+/**
+ * Sinkronisasi seluruh data PTK (sheet: ptk) ke Express Server dan Google Apps Script
+ */
+export async function syncAllPTKDirectly(
+  webAppUrl: string,
+  items: any[],
+  mode: 'merge' | 'replace' = 'merge'
+): Promise<{ success: boolean; message: string }> {
+  // 1. Coba lewat Express backend API
+  try {
+    const sRes = await fetch('/api/ptk/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, mode }),
+      signal: AbortSignal.timeout(40000)
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json().catch(() => null);
+      if (sJson?.status === 'success') {
+        return { success: true, message: sJson.message || `Berhasil mengimpor ${items.length} data PTK!` };
+      }
+    }
+  } catch (err) {
+    console.warn('Proxy /api/ptk/import error, fallback to direct Web App:', err);
+  }
+
+  if (!webAppUrl) {
+    return { success: true, message: `Berhasil mengimpor ${items.length} data PTK ke penyimpanan lokal!` };
+  }
+
+  try {
+    const payload = {
+      action: 'syncAll',
+      target: 'ptk',
+      items,
+      ptk: items,
+      data: items,
+      mode
+    };
+
+    const res = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(40000)
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.status === 'success') {
+        return { success: true, message: json.message || `Berhasil menyimpan ${items.length} data PTK ke sheet ptk!` };
+      }
+    }
+
+    return { success: true, message: `Data ${items.length} PTK berhasil dikirim ke Google Sheets!` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Gagal mengirim data PTK ke Google Sheets' };
+  }
+}
+
+

@@ -24,8 +24,14 @@ const SHEET_NAME_MUTASI_MASUK = "mutasi_masuk";
 const SHEET_NAME_MUTASI_KELUAR = "mutasi_keluar";
 const SHEET_NAME_GAJI = "gaji";
 const SHEET_NAME_PIP = "pip";
+const SHEET_NAME_DESIL = "desil";
+const SHEET_NAME_WALIKELAS = "walikelas";
+const SHEET_NAME_JURUSAN = "jurusan";
 const GAJI_OFFICIAL_HEADERS = ["No", "NIP", "Nama", "Bulan", "Gaji_Pokok", "Jum_Kotor", "Jum_bersih"];
 const PIP_OFFICIAL_HEADERS = ["NISN", "Nama_Murid", "alasan_layak"];
+const DESIL_OFFICIAL_HEADERS = ["nisn", "desil", "ket_pip"];
+const OFFICIAL_WALIKELAS_HEADERS = ["Kelas", "Nama", "NIP"];
+const OFFICIAL_JURUSAN_HEADERS = ["Kode", "Program Keahlian", "Konsentrasi Keahlian"];
 const DRIVE_FOLDER_ID_MUTASI = "1sGqbpA6uctgvOmYUwyxNP8pC5ORZUy56";
 
 /**
@@ -139,7 +145,7 @@ const OFFICIAL_PTK_HEADERS = [
   "No", "Nama", "NUPTK", "JK", "Tempat Lahir", "Tanggal Lahir", "NIP", "Status Kepegawaian",
   "Jenis PTK", "Gelar Depan", "Gelar Belakang", "Jenjang", "Jurusan/Prodi", "Sertifikasi",
   "TMT Kerja", "Tugas Tambahan", "Mengajar", "Jam Tugas Tambahan", "JJM", "Total JJM",
-  "Siswa", "Kompetensi", "Jabatan PTK"
+  "Siswa", "Kompetensi", "NIK", "Jabatan PTK"
 ];
 
 // List Header Resmi Pembelajaran (sheet: pembelajaran)
@@ -335,6 +341,60 @@ function getPIPSheet() {
     sheet = ss.insertSheet(SHEET_NAME_PIP);
     sheet.appendRow(PIP_OFFICIAL_HEADERS);
     sheet.getRange(1, 1, 1, PIP_OFFICIAL_HEADERS.length).setFontWeight("bold").setBackground("#e0f2fe");
+  }
+  return sheet;
+}
+
+function getDesilSheet() {
+  const ss = getSpreadsheet();
+  const allSheets = ss.getSheets();
+  let sheet = allSheets.find(s => {
+    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return name === "desil" || name === "ketdesil" || name === "keterangandesil";
+  });
+  if (!sheet) {
+    sheet = ss.getSheetByName(SHEET_NAME_DESIL);
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_DESIL);
+    sheet.appendRow(DESIL_OFFICIAL_HEADERS);
+    sheet.getRange(1, 1, 1, DESIL_OFFICIAL_HEADERS.length).setFontWeight("bold").setBackground("#e0e7ff");
+  }
+  return sheet;
+}
+
+function getWaliKelasSheet() {
+  const ss = getSpreadsheet();
+  const allSheets = ss.getSheets();
+  let sheet = allSheets.find(s => {
+    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return name === "walikelas" || name === "wali_kelas" || name === "datawalikelas";
+  });
+  if (!sheet) {
+    sheet = ss.getSheetByName(SHEET_NAME_WALIKELAS);
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_WALIKELAS);
+    sheet.appendRow(OFFICIAL_WALIKELAS_HEADERS);
+    sheet.getRange(1, 1, 1, OFFICIAL_WALIKELAS_HEADERS.length).setFontWeight("bold").setBackground("#fef08a");
+  }
+  return sheet;
+}
+
+function getJurusanSheet() {
+  const ss = getSpreadsheet();
+  const allSheets = ss.getSheets();
+  let sheet = allSheets.find(s => {
+    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    return name === "jurusan" || name === "datajurusan" || name === "kompetensikeahlian";
+  });
+  if (!sheet) {
+    sheet = ss.getSheetByName(SHEET_NAME_JURUSAN);
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME_JURUSAN);
+    sheet.appendRow(OFFICIAL_JURUSAN_HEADERS);
+    sheet.getRange(1, 1, 1, OFFICIAL_JURUSAN_HEADERS.length).setFontWeight("bold").setBackground("#e0e7ff");
   }
   return sheet;
 }
@@ -909,13 +969,128 @@ function doGet(e) {
             obj["alasan_layak"] = strVal;
             obj["alasanLayak"] = strVal;
           }
+          if (hClean === "status" || hClean === "sts") {
+            obj["status"] = strVal || "Belum diusul";
+          }
         });
+        if (!obj.status) {
+          obj.status = "Belum diusul";
+        }
         return obj;
       });
 
       return responseJSON({
         status: "success",
         target: "pip",
+        total: list.length,
+        data: list,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 9. DATA KETERANGAN DESIL (sheet: desil)
+    if (rawTarget === "desil" || rawTarget === "ket_desil" || rawTarget === "ketdesil") {
+      const sheet = getDesilSheet();
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) {
+        return responseJSON({ status: "success", target: "desil", total: 0, data: [] });
+      }
+      const headers = data[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const nisnIdx = headers.indexOf("nisn");
+      const desilIdx = headers.indexOf("desil");
+      const ketPipIdx = headers.findIndex(h => h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip");
+      const rows = data.slice(1);
+      const list = rows.map((row, index) => {
+        const rNisn = nisnIdx >= 0 ? String(row[nisnIdx] || '').trim() : '';
+        const rDesil = desilIdx >= 0 ? String(row[desilIdx] || '').trim() : '';
+        const rKetPip = ketPipIdx >= 0 ? String(row[ketPipIdx] || '').trim() : '';
+        return {
+          rowIndex: index + 2,
+          nisn: rNisn,
+          desil: rDesil,
+          ket_pip: rKetPip
+        };
+      }).filter(item => Boolean(item.nisn));
+
+      return responseJSON({
+        status: "success",
+        target: "desil",
+        total: list.length,
+        data: list,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 10. DATA WALI KELAS (sheet: walikelas)
+    if (rawTarget === "walikelas" || rawTarget === "wali_kelas" || rawTarget === "wali") {
+      const sheet = getWaliKelasSheet();
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) {
+        return responseJSON({ status: "success", target: "walikelas", total: 0, data: [] });
+      }
+      const headers = data[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+      let kelasIdx = headers.findIndex(h => h === "kelas" || h === "rombel");
+      let namaIdx = headers.findIndex(h => h === "nama" || h === "walikelas" || h === "namawali");
+      let nipIdx = headers.findIndex(h => h === "nip");
+
+      if (kelasIdx === -1) kelasIdx = 0;
+      if (namaIdx === -1) namaIdx = 1;
+      if (nipIdx === -1) nipIdx = 2;
+
+      const rows = data.slice(1);
+      const list = rows.map((row, index) => {
+        const k = row[kelasIdx] !== undefined && row[kelasIdx] !== null ? String(row[kelasIdx]).trim() : "";
+        const n = row[namaIdx] !== undefined && row[namaIdx] !== null ? String(row[namaIdx]).trim() : "";
+        const p = nipIdx >= 0 && row[nipIdx] !== undefined && row[nipIdx] !== null ? String(row[nipIdx]).trim() : "";
+        return {
+          rowIndex: index + 2,
+          kelas: k,
+          nama: n,
+          nip: p
+        };
+      }).filter(w => Boolean(w.kelas && w.nama && w.kelas.toLowerCase() !== "kelas"));
+
+      return responseJSON({
+        status: "success",
+        target: "walikelas",
+        total: list.length,
+        data: list,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 11. DATA JURUSAN (sheet: jurusan)
+    if (rawTarget === "jurusan" || rawTarget === "datajurusan" || rawTarget === "programkeahlian") {
+      const sheet = getJurusanSheet();
+      const data = sheet.getDataRange().getValues();
+      if (data.length <= 1) {
+        return responseJSON({ status: "success", target: "jurusan", total: 0, data: [] });
+      }
+      const headers = data[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+      let kodeIdx = headers.findIndex(h => h === "kode" || h === "kodejurusan");
+      let progIdx = headers.findIndex(h => h === "programkeahlian" || h === "program");
+      let konsIdx = headers.findIndex(h => h === "konsentrasikeahlian" || h === "konsentrasi" || h === "jurusan");
+
+      if (kodeIdx === -1) kodeIdx = 0;
+      if (progIdx === -1) progIdx = 1;
+      if (konsIdx === -1) konsIdx = 2;
+
+      const rows = data.slice(1);
+      const list = rows.map((row, index) => {
+        const kode = row[kodeIdx] !== undefined && row[kodeIdx] !== null ? String(row[kodeIdx]).trim() : "";
+        const prog = row[progIdx] !== undefined && row[progIdx] !== null ? String(row[progIdx]).trim() : "";
+        const kons = row[konsIdx] !== undefined && row[konsIdx] !== null ? String(row[konsIdx]).trim() : "";
+        return {
+          rowIndex: index + 2,
+          kode: kode,
+          programKeahlian: prog,
+          konsentrasiKeahlian: kons
+        };
+      }).filter(j => Boolean(j.kode || j.konsentrasiKeahlian));
+
+      return responseJSON({
+        status: "success",
+        target: "jurusan",
         total: list.length,
         data: list,
         timestamp: new Date().toISOString()
@@ -1141,32 +1316,121 @@ function doPost(e) {
       });
     }
 
-    const targetType = contents.target || (contents.pip || contents.usulanpip ? "pip" : (contents.gaji || contents.datagaji ? "gaji" : (contents.mutasi_masuk || contents.mutasimasuk || contents.mutasi ? "mutasi_masuk" : (contents.mutasi_keluar || contents.mutasikeluar ? "mutasi_keluar" : (contents.gtk ? "gtk" : (contents.naikpangkat ? "naikpangkat" : (contents.kgb ? "kgb" : "data")))))));
+    const targetType = contents.target || (contents.walikelas ? "walikelas" : (contents.jurusan ? "jurusan" : (contents.desil || contents.ket_desil ? "desil" : (contents.pip || contents.usulanpip ? "pip" : (contents.gaji || contents.datagaji ? "gaji" : (contents.mutasi_masuk || contents.mutasimasuk || contents.mutasi ? "mutasi_masuk" : (contents.mutasi_keluar || contents.mutasikeluar ? "mutasi_keluar" : (contents.ptk ? "ptk" : (contents.pembelajaran ? "pembelajaran" : (contents.gtk ? "gtk" : (contents.naikpangkat ? "naikpangkat" : (contents.kgb ? "kgb" : "data"))))))))))));
 
     // TARGET: PIP (Usulan PIP)
-    if (targetType === "pip" || action === "savePIP" || action === "updatePIP") {
+    if (targetType === "pip" || action === "savePIP" || action === "updatePIP" || action === "importAllPIP") {
       const sheet = getPIPSheet();
-      const targetNisn = String(contents.nisn || "").trim();
-      const targetNama = String(contents.nama || "").trim().toLowerCase();
-      const alasanLayak = String(contents.alasan_layak || contents.alasan_usul || contents.alasanLayak || "").trim();
-      
       const values = sheet.getDataRange().getValues();
-      let headerRow = values[0] ? values[0].map(h => String(h).trim()) : ["NISN", "Nama_Murid", "alasan_layak"];
+      let headerRow = values[0] ? values[0].map(h => String(h).trim()) : ["NISN", "Nama_Murid", "alasan_layak", "Status"];
       let nisnCol = 0;
       let namaCol = 1;
       let alasanCol = 2;
+      let statusCol = -1;
 
       headerRow.forEach((h, idx) => {
         const hClean = h.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (hClean.includes('nisn')) nisnCol = idx;
         if (hClean.includes('nama') || hClean.includes('murid')) namaCol = idx;
         if (hClean.includes('alasan') || hClean.includes('layak') || hClean.includes('usul')) alasanCol = idx;
+        if (hClean.includes('status') || hClean === 'sts') statusCol = idx;
       });
 
+      // Jika kolom status belum ada di header, tambahkan header Status
+      if (statusCol === -1) {
+        statusCol = headerRow.length;
+        sheet.getRange(1, statusCol + 1).setValue("Status");
+        headerRow.push("Status");
+      }
+
+      // Sync All / Import All PIP (Smart Merge / Replace)
+      if (action === "syncAll" || action === "importAll" || action === "saveAll" || action === "importAllPIP") {
+        const items = contents.items || contents.data || contents.pip || [];
+        if (items.length > 0) {
+          const mode = contents.mode || "merge";
+          if (mode === "replace") {
+            const rowsToWrite = items.map(p => {
+              const row = [];
+              row[nisnCol] = String(p.nisn || "").trim();
+              row[namaCol] = String(p.nama || p.nama_murid || "").trim();
+              row[alasanCol] = String(p.alasan_layak || p.alasan_usul || "").trim();
+              row[statusCol] = String(p.status || "Belum diusul").trim();
+              return row;
+            });
+            const neededRows = rowsToWrite.length + 1;
+            const maxRows = sheet.getMaxRows();
+            if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 10);
+            if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headerRow.length).clearContent();
+            if (rowsToWrite.length > 0) {
+              const targetRange = sheet.getRange(2, 1, rowsToWrite.length, headerRow.length);
+              targetRange.setNumberFormat("@");
+              targetRange.setValues(rowsToWrite);
+            }
+            return responseJSON({ status: "success", message: "Berhasil mengganti seluruh data PIP (" + rowsToWrite.length + " data)" });
+          } else {
+            // Smart Merge: update existing rows, append new ones
+            const sheetRows = values.slice(1);
+            const rowMap = {};
+            for (let r = 0; r < sheetRows.length; r++) {
+              const rNisn = String(sheetRows[r][nisnCol] || "").trim();
+              if (rNisn) rowMap[rNisn] = r + 2; // 1-indexed row number in sheet
+            }
+
+            let updatedCount = 0;
+            let insertedCount = 0;
+            const newRowsToAppend = [];
+
+            items.forEach(p => {
+              const pNisn = String(p.nisn || "").trim();
+              const pNama = String(p.nama || p.nama_murid || "").trim();
+              const pAlasan = String(p.alasan_layak || p.alasan_usul || "").trim();
+              const pStatus = String(p.status || "Belum diusul").trim();
+
+              if (pNisn && rowMap[pNisn]) {
+                const rowNum = rowMap[pNisn];
+                if (pNama && namaCol >= 0) sheet.getRange(rowNum, namaCol + 1).setNumberFormat("@").setValue(pNama);
+                if (alasanCol >= 0) sheet.getRange(rowNum, alasanCol + 1).setNumberFormat("@").setValue(pAlasan);
+                if (statusCol >= 0) sheet.getRange(rowNum, statusCol + 1).setNumberFormat("@").setValue(pStatus);
+                updatedCount++;
+              } else if (pNisn) {
+                const newRow = [];
+                newRow[nisnCol] = pNisn;
+                newRow[namaCol] = pNama;
+                newRow[alasanCol] = pAlasan;
+                newRow[statusCol] = pStatus;
+                newRowsToAppend.push(newRow);
+                insertedCount++;
+              }
+            });
+
+            if (newRowsToAppend.length > 0) {
+              const startRow = sheet.getLastRow() + 1;
+              const maxRows = sheet.getMaxRows();
+              const needed = startRow + newRowsToAppend.length - 1;
+              if (maxRows < needed) sheet.insertRowsAfter(maxRows, needed - maxRows + 10);
+              const appendRange = sheet.getRange(startRow, 1, newRowsToAppend.length, headerRow.length);
+              appendRange.setNumberFormat("@");
+              appendRange.setValues(newRowsToAppend);
+            }
+
+            return responseJSON({
+              status: "success",
+              message: "Berhasil Smart Merge PIP: " + updatedCount + " diperbarui, " + insertedCount + " ditambahkan."
+            });
+          }
+        }
+      }
+
+      const targetNisn = String(contents.nisn || "").trim();
+      const targetNama = String(contents.nama || "").trim().toLowerCase();
+      const alasanLayak = contents.alasan_layak !== undefined ? String(contents.alasan_layak || contents.alasan_usul || contents.alasanLayak || "").trim() : undefined;
+      const statusVal = contents.status !== undefined ? String(contents.status).trim() : undefined;
+      
+      const currentValues = sheet.getDataRange().getValues();
       let foundRowIndex = -1;
-      for (let r = 1; r < values.length; r++) {
-        const rNisn = String(values[r][nisnCol] || "").trim();
-        const rNama = String(values[r][namaCol] || "").trim().toLowerCase();
+      for (let r = 1; r < currentValues.length; r++) {
+        const rNisn = String(currentValues[r][nisnCol] || "").trim();
+        const rNama = String(currentValues[r][namaCol] || "").trim().toLowerCase();
         if ((targetNisn && rNisn === targetNisn) || (targetNama && rNama === targetNama)) {
           foundRowIndex = r + 1; // 1-indexed in sheet
           break;
@@ -1174,20 +1438,158 @@ function doPost(e) {
       }
 
       if (foundRowIndex > 0) {
-        sheet.getRange(foundRowIndex, alasanCol + 1).setValue(alasanLayak);
+        if (alasanLayak !== undefined && alasanCol >= 0) {
+          sheet.getRange(foundRowIndex, alasanCol + 1).setValue(alasanLayak);
+        }
+        if (statusVal !== undefined && statusCol >= 0) {
+          sheet.getRange(foundRowIndex, statusCol + 1).setValue(statusVal);
+        }
       } else {
         const newRow = [];
         newRow[nisnCol] = targetNisn;
         newRow[namaCol] = contents.nama || "";
-        newRow[alasanCol] = alasanLayak;
+        newRow[alasanCol] = alasanLayak !== undefined ? alasanLayak : "";
+        if (statusCol >= 0) {
+          newRow[statusCol] = statusVal !== undefined ? statusVal : "Belum diusul";
+        }
         sheet.appendRow(newRow);
       }
 
       return responseJSON({
         status: "success",
-        message: "Alasan layak PIP berhasil disimpan ke sheet pip",
-        data: { nisn: targetNisn, nama: contents.nama, alasan_layak: alasanLayak }
+        message: "Data usulan PIP berhasil disimpan ke sheet pip",
+        data: { nisn: targetNisn, nama: contents.nama, alasan_layak: alasanLayak, status: statusVal }
       });
+    }
+
+    // TARGET: DESIL (sheet: desil)
+    if (targetType === "desil" || action === "saveDesil" || action === "updateDesil" || action === "syncAllDesil") {
+      const sheet = getDesilSheet();
+      const values = sheet.getDataRange().getValues();
+      let headerRow = values[0] ? values[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '')) : ["nisn", "desil", "ket_pip"];
+      let nisnCol = headerRow.indexOf("nisn") >= 0 ? headerRow.indexOf("nisn") : 0;
+      let desilCol = headerRow.indexOf("desil") >= 0 ? headerRow.indexOf("desil") : 1;
+      let ketPipCol = headerRow.findIndex(h => h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip");
+      if (ketPipCol < 0) {
+        ketPipCol = headerRow.length;
+        sheet.getRange(1, ketPipCol + 1).setNumberFormat("@").setValue("ket_pip");
+        headerRow.push("ket_pip");
+      }
+
+      // Sync All / Import All
+      if (action === "syncAll" || action === "importAll" || action === "saveAll" || action === "syncAllDesil") {
+        const items = contents.items || contents.data || contents.desil || [];
+        if (items.length > 0) {
+          const colCount = Math.max(nisnCol, desilCol, ketPipCol) + 1;
+          const rowsToWrite = items.map(d => {
+            const row = new Array(colCount).fill("");
+            row[nisnCol] = String(d.nisn || "").trim();
+            row[desilCol] = String(d.desil || "").trim();
+            row[ketPipCol] = String(d.ket_pip || d.ketPip || "").trim();
+            return row;
+          });
+          const neededRows = rowsToWrite.length + 1;
+          const maxRows = sheet.getMaxRows();
+          if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 20);
+          if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, colCount).clearContent();
+          const targetRange = sheet.getRange(2, 1, rowsToWrite.length, colCount);
+          targetRange.setNumberFormat("@");
+          targetRange.setValues(rowsToWrite);
+          return responseJSON({ status: "success", message: "Berhasil menyimpan seluruh data desil & ket_pip (" + rowsToWrite.length + " data)" });
+        }
+      }
+
+      // Single Add / Update Desil
+      const targetNisn = String(contents.nisn || (contents.item && contents.item.nisn) || "").trim();
+      const desilVal = contents.desil !== undefined ? String(contents.desil).trim() : (contents.item && contents.item.desil !== undefined ? String(contents.item.desil).trim() : undefined);
+      const ketPipVal = contents.ket_pip !== undefined ? String(contents.ket_pip).trim() : (contents.ketPip !== undefined ? String(contents.ketPip).trim() : (contents.item && contents.item.ket_pip !== undefined ? String(contents.item.ket_pip).trim() : undefined));
+      if (!targetNisn) {
+        return responseJSON({ status: "error", message: "NISN tidak boleh kosong" });
+      }
+
+      let foundRow = -1;
+      for (let r = 1; r < values.length; r++) {
+        const rNisn = String(values[r][nisnCol] || "").trim();
+        if (rNisn === targetNisn) {
+          foundRow = r + 1;
+          break;
+        }
+      }
+
+      if (foundRow > 1) {
+        if (desilVal !== undefined) {
+          sheet.getRange(foundRow, desilCol + 1).setNumberFormat("@").setValue(desilVal);
+        }
+        if (ketPipVal !== undefined) {
+          sheet.getRange(foundRow, ketPipCol + 1).setNumberFormat("@").setValue(ketPipVal);
+        }
+        return responseJSON({ status: "success", message: "Data desil berhasil diperbarui", row: foundRow, data: { nisn: targetNisn, desil: desilVal, ket_pip: ketPipVal } });
+      } else {
+        const newRowIdx = sheet.getLastRow() + 1;
+        const colCount = Math.max(nisnCol, desilCol, ketPipCol) + 1;
+        const rRange = sheet.getRange(newRowIdx, 1, 1, colCount);
+        rRange.setNumberFormat("@");
+        const newRow = new Array(colCount).fill("");
+        newRow[nisnCol] = targetNisn;
+        newRow[desilCol] = desilVal !== undefined ? desilVal : "";
+        newRow[ketPipCol] = ketPipVal !== undefined ? ketPipVal : "";
+        rRange.setValues([newRow]);
+        return responseJSON({ status: "success", message: "Data desil baru berhasil ditambahkan", row: newRowIdx, data: { nisn: targetNisn, desil: desilVal, ket_pip: ketPipVal } });
+      }
+    }
+
+    // TARGET: WALIKELAS (sheet: walikelas)
+    if (targetType === "walikelas" || action === "importWaliKelas" || action === "syncAllWaliKelas") {
+      const sheet = getWaliKelasSheet();
+      const items = contents.items || contents.data || contents.walikelas || [];
+      if (items.length > 0) {
+        const rowsToWrite = items.map(w => [
+          String(w.kelas || "").trim(),
+          String(w.nama || "").trim(),
+          String(w.nip || "").trim()
+        ]).filter(r => r[0] && r[1]);
+
+        if (rowsToWrite.length > 0) {
+          const neededRows = rowsToWrite.length + 1;
+          const maxRows = sheet.getMaxRows();
+          if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 10);
+          if (sheet.getLastRow() > 1) {
+            sheet.getRange(2, 1, sheet.getLastRow() - 1, OFFICIAL_WALIKELAS_HEADERS.length).clearContent();
+          }
+          const targetRange = sheet.getRange(2, 1, rowsToWrite.length, OFFICIAL_WALIKELAS_HEADERS.length);
+          targetRange.setNumberFormat("@");
+          targetRange.setValues(rowsToWrite);
+        }
+        return responseJSON({ status: "success", message: "Berhasil sinkronisasi " + rowsToWrite.length + " data wali kelas!" });
+      }
+      return responseJSON({ status: "warning", message: "Tidak ada data wali kelas untuk disimpan" });
+    }
+
+    // TARGET: JURUSAN (sheet: jurusan)
+    if (targetType === "jurusan" || action === "importJurusan" || action === "syncAllJurusan") {
+      const sheet = getJurusanSheet();
+      const items = contents.items || contents.data || contents.jurusan || [];
+      if (items.length > 0) {
+        const rowsToWrite = items.map(j => [
+          String(j.kode || "").trim(),
+          String(j.programKeahlian || j.program_keahlian || "").trim(),
+          String(j.konsentrasiKeahlian || j.konsentrasi_keahlian || "").trim()
+        ]).filter(r => r[0] || r[2]);
+
+        if (rowsToWrite.length > 0) {
+          const neededRows = rowsToWrite.length + 1;
+          const maxRows = sheet.getMaxRows();
+          if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 10);
+          if (sheet.getLastRow() > 1) {
+            sheet.getRange(2, 1, sheet.getLastRow() - 1, OFFICIAL_JURUSAN_HEADERS.length).clearContent();
+          }
+          const targetRange = sheet.getRange(2, 1, rowsToWrite.length, OFFICIAL_JURUSAN_HEADERS.length);
+          targetRange.setNumberFormat("@");
+          targetRange.setValues(rowsToWrite);
+        }
+        return responseJSON({ status: "success", message: "Berhasil sinkronisasi " + rowsToWrite.length + " data jurusan!" });
+      }
+      return responseJSON({ status: "warning", message: "Tidak ada data jurusan untuk disimpan" });
     }
 
     // 0. TARGET: MUTASI_MASUK
@@ -1571,6 +1973,89 @@ function doPost(e) {
         cellRange.setNumberFormat("@");
         cellRange.setValues([rowValues]);
         return responseJSON({ status: "success", message: "Data mutasi keluar baru berhasil ditambahkan" });
+      }
+    }
+
+    // 0A. TARGET: PTK (sheet: ptk)
+    if (targetType === "ptk" || targetType === "dataptk" || action === "syncAllPTK") {
+      const sheet = getPtkSheet();
+      const data = sheet.getDataRange().getValues();
+      const headers = data[0].map(h => String(h).trim());
+
+      // Sync All / Import All
+      if (action === "syncAll" || action === "importAll" || action === "saveAll" || action === "syncAllPTK") {
+        const items = contents.items || contents.data || contents.ptk || [];
+        if (items.length > 0) {
+          const rowsToWrite = items.map((p, idx) => {
+            return headers.map(h => {
+              const hClean = String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (hClean === "no") return String(p.no || (idx + 1));
+              if (hClean.includes("tgl") || hClean.includes("tanggal") || hClean.includes("tmt")) {
+                return formatToDDMMYYYY(p[h] || p[hClean] || "");
+              }
+              if (p[h] !== undefined && p[h] !== null) return String(p[h]);
+              if (p[hClean] !== undefined && p[hClean] !== null) return String(p[hClean]);
+              return "";
+            });
+          });
+
+          const neededRows = rowsToWrite.length + 1;
+          const maxRows = sheet.getMaxRows();
+          if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 20);
+          if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+
+          const targetRange = sheet.getRange(2, 1, rowsToWrite.length, headers.length);
+          targetRange.setNumberFormat("@");
+          targetRange.setValues(rowsToWrite);
+          return responseJSON({ status: "success", message: "Berhasil sinkronisasi " + rowsToWrite.length + " data PTK ke sheet ptk!" });
+        }
+      }
+    }
+
+    // 0B. TARGET: PEMBELAJARAN
+    if (targetType === "pembelajaran" || targetType === "jadwalpembelajaran" || action === "syncAllPembelajaran") {
+      const sheet = getPembelajaranSheet();
+      const data = sheet.getDataRange().getValues();
+      const headers = data[0].map(h => String(h).trim());
+
+      // Sync All / Import All
+      if (action === "syncAll" || action === "importAll" || action === "saveAll" || action === "syncAllPembelajaran") {
+        const items = contents.items || contents.data || contents.pembelajaran || [];
+        if (items.length > 0) {
+          const rowsToWrite = items.map((p, idx) => {
+            return headers.map(h => {
+              const hClean = String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (hClean === "no") return String(p.no || (idx + 1));
+              if (hClean === "jenisrombel") return String(p.jenisRombel || p.jenis_rombel || "");
+              if (hClean === "tingkat") return String(p.tingkat || "");
+              if (hClean === "namarombel" || hClean === "rombel") return String(p.namaRombel || p.nama_rombel || "");
+              if (hClean === "kurikulum") return String(p.kurikulum || "");
+              if (hClean === "programkeahlian" || hClean === "programkompetensikeahlian" || hClean === "kompetensikeahlian") return String(p.programKeahlian || p.program_keahlian || "");
+              if (hClean === "namaptk" || hClean === "ptk" || hClean === "namaguru") return String(p.namaPtk || p.nama_ptk || p.nama || "");
+              if (hClean === "nuptk") return String(p.nuptk || "");
+              if (hClean === "ptkinduk") return String(p.ptkInduk || p.ptk_induk || "");
+              if (hClean === "kepegawaian") return String(p.kepegawaian || "");
+              if (hClean === "namamatpel" || hClean === "matpel" || hClean === "mapel") return String(p.namaMatpel || p.nama_matpel || "");
+              if (hClean === "kodematpel") return String(p.kodeMatpel || p.kode_matpel || "");
+              if (hClean === "jjm") return String(p.jjm !== undefined ? p.jjm : "");
+              if (hClean === "jmlsiswa" || hClean === "jumlahsiswa") return String(p.jmlSiswa !== undefined ? p.jmlSiswa : "");
+              if (hClean === "tglskmengajar") return formatToDDMMYYYY(p.tglSkMengajar || p.tgl_sk_mengajar || "");
+              if (hClean === "skmengajar") return String(p.skMengajar || p.sk_mengajar || "");
+              if (hClean === "statusdikurikulum") return String(p.statusDiKurikulum || p.status_di_kurikulum || "");
+              return String(p[h] || p[hClean] || "");
+            });
+          });
+
+          const neededRows = rowsToWrite.length + 1;
+          const maxRows = sheet.getMaxRows();
+          if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 20);
+          if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+
+          const targetRange = sheet.getRange(2, 1, rowsToWrite.length, headers.length);
+          targetRange.setNumberFormat("@");
+          targetRange.setValues(rowsToWrite);
+          return responseJSON({ status: "success", message: "Berhasil sinkronisasi " + rowsToWrite.length + " data Pembelajaran!" });
+        }
       }
     }
 

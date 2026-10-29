@@ -404,6 +404,33 @@ export interface PIPData {
   [key: string]: any;
 }
 
+export const DESIL_OPTIONS = [
+  'desil 1',
+  'desil 2',
+  'desil 3',
+  'desil 4',
+  'desil 5',
+  'yatim piatu'
+] as const;
+
+export type DesilOption = typeof DESIL_OPTIONS[number];
+
+export const KET_PIP_OPTIONS = [
+  'sudah dapat PIP',
+  'Belum Dapat PIP'
+] as const;
+
+export type KetPIPOption = typeof KET_PIP_OPTIONS[number];
+
+export interface DesilData {
+  nisn: string;
+  desil: string;
+  ket_pip?: string;
+  nama?: string;
+  rombel?: string;
+  rowIndex?: number;
+}
+
 export type ActiveTab = 
   | 'dashboard' 
   | 'gtk' 

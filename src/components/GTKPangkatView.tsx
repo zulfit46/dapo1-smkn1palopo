@@ -36,6 +36,7 @@ import { SyncSuccessModal, SavedDetailItem } from './SyncSuccessModal';
 import { DuplicateWarningModal } from './DuplicateWarningModal';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { TelegramConfigModal } from './TelegramConfigModal';
+import { GTKPangkatImportModal } from './GTKPangkatImportModal';
 import { isUserRole, isOwnerOfRecord } from '../utils/authUtils';
 import { notifyPangkatBaru, getTelegramConfig } from '../services/telegramService';
 
@@ -123,6 +124,7 @@ export const GTKPangkatView: React.FC<GTKPangkatViewProps> = ({
 
   // Telegram Bot Notification State
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>({
     botToken: '',
     chatId: '',
@@ -136,6 +138,36 @@ export const GTKPangkatView: React.FC<GTKPangkatViewProps> = ({
   useEffect(() => {
     getTelegramConfig().then(setTelegramConfig).catch(() => {});
   }, []);
+
+  // Handler Terapkan Smart Impor Kenaikan Pangkat
+  const handleApplyImportPangkat = async (
+    finalList: RiwayatPangkat[],
+    mode: 'merge' | 'replace',
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number }
+  ) => {
+    setRiwayatList(finalList);
+    safeSetItem(STORAGE_KEY, finalList);
+
+    setSuccessModalData({
+      isOpen: true,
+      title: 'Smart Impor Kenaikan Pangkat Berhasil!',
+      subtitle: `Berhasil mengimpor data kepangkatan (${stats.matchingCount} diperbarui, ${stats.newCount} baru, total ${stats.finalTotal} riwayat).`,
+      actionType: 'syncAll',
+      dataDetails: [
+        { label: 'Metode Impor', value: mode === 'replace' ? 'Ganti Semua (Replace)' : 'Smart Merge' },
+        { label: 'Data Diperbarui', value: `${stats.matchingCount} GTK` },
+        { label: 'Data Baru', value: `${stats.newCount} GTK` },
+        { label: 'Total Riwayat', value: `${stats.finalTotal} Berkas` }
+      ],
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    });
+
+    if (appConfig.webAppUrl) {
+      syncAllPangkatDirectly(appConfig.webAppUrl, finalList, mode).catch((err) => {
+        console.warn('Sync pangkat background error:', err);
+      });
+    }
+  };
 
   // Save to safe storage
   useEffect(() => {
@@ -1357,6 +1389,18 @@ export const GTKPangkatView: React.FC<GTKPangkatViewProps> = ({
 
             {/* Action Buttons */}
             <div className={`flex flex-wrap items-center gap-2 ${isUser ? 'ml-auto' : ''}`}>
+              {!isUser && (
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all shrink-0 cursor-pointer"
+                  title="Smart Impor Excel Kenaikan Pangkat (sheet: naikpangkat)"
+                >
+                  <Sparkles className="w-4 h-4 text-blue-200" />
+                  <span>Smart Impor</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -1620,6 +1664,14 @@ export const GTKPangkatView: React.FC<GTKPangkatViewProps> = ({
           onConfigSaved={(cfg) => setTelegramConfig(cfg)}
         />
       )}
+
+      {/* Smart Import Modal Kenaikan Pangkat */}
+      <GTKPangkatImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        currentRiwayatList={riwayatList}
+        onApplyImport={handleApplyImportPangkat}
+      />
     </div>
   );
 };

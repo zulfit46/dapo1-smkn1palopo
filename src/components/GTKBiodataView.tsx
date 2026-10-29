@@ -14,15 +14,21 @@ import {
   Award,
   Users,
   BarChart3,
-  BookOpen
+  BookOpen,
+  Sparkles,
+  Upload,
+  CheckCircle2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { GTKData, PembelajaranData } from '../types';
+import { GTKData, PembelajaranData, AppConfig } from '../types';
 import { INITIAL_GTK_LIST } from '../data/initialGTK';
 import { GTKDetailModal } from './GTKDetailModal';
 import { GTKProfileCard } from './GTKProfileCard';
+import { GTKBiodataImportModal } from './GTKBiodataImportModal';
+import { syncAllGTKDirectly } from '../services/sheetsSync';
+import { safeSetItem } from '../utils/storage';
 import { isUserRole, isOwnerOfRecord } from '../utils/authUtils';
 
 interface GTKBiodataViewProps {
@@ -30,15 +36,22 @@ interface GTKBiodataViewProps {
   pembelajaranList?: PembelajaranData[];
   currentUser?: GTKData | null;
   onNavigateTab?: (tab: any) => void;
+  onImportGTK?: (newList: GTKData[]) => void;
+  appConfig?: AppConfig;
 }
 
 export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({ 
   gtkList = INITIAL_GTK_LIST,
   pembelajaranList = [],
   currentUser,
-  onNavigateTab
+  onNavigateTab,
+  onImportGTK,
+  appConfig
 }) => {
   const isUser = isUserRole(currentUser);
+  const isAdmin = !isUser;
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importNotification, setImportNotification] = useState<string | null>(null);
 
   // If role is 'user', restrict the list to strictly the authenticated user's record
   const effectiveGtkList = useMemo(() => {
@@ -295,6 +308,29 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
     doc.save(`Biodata_GTK_SMKN1_Palopo_${dateStr}.pdf`);
   };
 
+  // Handler Terapkan Smart Impor GTK
+  const handleApplyImport = async (
+    finalList: GTKData[], 
+    mode: 'merge' | 'replace', 
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number }
+  ) => {
+    safeSetItem('dapodik_cached_gtk', finalList);
+    if (onImportGTK) {
+      onImportGTK(finalList);
+    }
+    setImportNotification(
+      `Berhasil ${mode === 'replace' ? 'mengganti semua data GTK' : 'Smart Merge'}! (${stats.matchingCount} diperbarui, ${stats.newCount} baru, total ${stats.finalTotal} GTK)`
+    );
+    setTimeout(() => setImportNotification(null), 6000);
+
+    // Sinkronisasi ke backend & Google Sheets Web App
+    if (appConfig?.webAppUrl) {
+      syncAllGTKDirectly(appConfig.webAppUrl, finalList, mode).catch((err) => {
+        console.warn('Latar belakang sync GTK Sheets gagal:', err);
+      });
+    }
+  };
+
   // JIKA LOGIN SEBAGAI USER: Tampilkan langsung data profil lengkap (seperti modal detail, tapi bukan modal dan bukan tabel)
   if (isUser && userGtk) {
     return (
@@ -306,6 +342,21 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
 
   return (
     <div className="space-y-6 w-full">
+      {/* Notifikasi Impor Sukses */}
+      {importNotification && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-emerald-800 shadow-xs animate-in slide-in-from-top-2">
+          <div className="flex items-center space-x-2 text-xs font-semibold">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>{importNotification}</span>
+          </div>
+          <button
+            onClick={() => setImportNotification(null)}
+            className="text-emerald-600 hover:text-emerald-800 p-1 rounded-lg"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       {/* User Role Informational Banner */}
       {isUser && currentUser && (
         <div className="bg-emerald-50 border border-emerald-200/90 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 text-emerald-950 shadow-xs">
@@ -358,6 +409,18 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
 
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all shrink-0 cursor-pointer"
+                    title="Impor Cerdas Excel Biodata GTK (53 Kolom Resmi)"
+                  >
+                    <Sparkles className="w-4 h-4 text-emerald-100" />
+                    <span>Smart Impor</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handleExportExcel}
@@ -748,6 +811,14 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
         onClose={() => setSelectedGTKDetail(null)}
         gtk={selectedGTKDetail}
         pembelajaranList={pembelajaranList}
+      />
+
+      {/* GTK Biodata Smart Import Modal */}
+      <GTKBiodataImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        currentGtkList={gtkList}
+        onApplyImport={handleApplyImport}
       />
     </div>
   );

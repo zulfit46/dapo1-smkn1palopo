@@ -1,29 +1,33 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, AppConfig, GTKData, PIPData, WaliKelas } from '../types';
-import { fetchPIPDirectly, savePIPDirectly, LOCAL_STORAGE_PIP_KEY } from '../services/sheetsSync';
+import { fetchPIPDirectly, savePIPDirectly, syncAllPIPDirectly, LOCAL_STORAGE_PIP_KEY } from '../services/sheetsSync';
 import { safeGetItem, safeSetItem } from '../utils/storage';
 import { isAdminRole, isUserRole, getWaliKelasForUser } from '../utils/authUtils';
+import { PIPImportModal } from './PIPImportModal';
+import { KetDesilTab } from './KetDesilTab';
 import { 
   GraduationCap, 
   Search, 
   Download, 
+  Upload,
   RefreshCw, 
   Check, 
   X, 
   AlertCircle, 
   ChevronLeft, 
-  ChevronRight,
-  Filter,
-  CheckCircle2,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  Users,
-  Settings,
-  AlertTriangle,
-  Lock,
-  Power,
-  PowerOff
+  ChevronRight, 
+  Filter, 
+  CheckCircle2, 
+  ArrowUpDown, 
+  ArrowUp, 
+  ArrowDown, 
+  Users, 
+  Settings, 
+  AlertTriangle, 
+  Lock, 
+  Power, 
+  PowerOff,
+  Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -97,6 +101,8 @@ export const PIPView: React.FC<PIPViewProps> = ({
   const isWaliKelasOnly = !isAdmin && Boolean(userWaliKelas);
   const assignedKelas = userWaliKelas?.kelas ? cleanClass(userWaliKelas.kelas) : '';
 
+  const [activePipSubTab, setActivePipSubTab] = useState<'usulan' | 'desil'>('usulan');
+
   const [pipList, setPipList] = useState<PIPData[]>(() => {
     return safeGetItem<PIPData[]>(LOCAL_STORAGE_PIP_KEY, []);
   });
@@ -114,6 +120,9 @@ export const PIPView: React.FC<PIPViewProps> = ({
   const [selectedStudent, setSelectedStudent] = useState<PIPData | null>(null);
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // State Modal Smart Impor PIP (Khusus Admin)
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
   // Status Aktif/Nonaktif Usulan PIP
   const [isPipAktif, setIsPipAktif] = useState<boolean>(() => {
@@ -704,6 +713,33 @@ export const PIPView: React.FC<PIPViewProps> = ({
     XLSX.writeFile(workbook, `Usulan_PIP_SMKN1_Palopo_${dateStr}.xlsx`);
   };
 
+  // Handler mengeksekusi hasil Smart Impor PIP (Merge / Replace)
+  const handleApplyImportPIP = async (
+    finalList: PIPData[], 
+    mode: 'merge' | 'replace',
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number; matchedStudentCount: number }
+  ) => {
+    setIsImportModalOpen(false);
+    setIsLoading(true);
+    setToastMessage(`Menyimpan ${finalList.length} data usulan PIP (${mode === 'merge' ? 'Smart Merge' : 'Ganti Semua'})...`);
+
+    try {
+      const res = await syncAllPIPDirectly(appConfig.webAppUrl || '', finalList, mode);
+      setPipList(finalList);
+      if (res.success) {
+        setToastMessage(`Sukses: ${res.message} (${stats.matchingCount} data diperbarui, ${stats.newCount} data baru ditambahkan)`);
+      } else {
+        setToastMessage(`Data berhasil disimpan di penyimpanan lokal (${finalList.length} siswa)`);
+      }
+    } catch (err: any) {
+      setPipList(finalList);
+      setToastMessage(`Data tersimpan di penyimpanan browser: ${err?.message || 'Gagal tersinkron'}`);
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setToastMessage(null), 5000);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Toast Notification */}
@@ -718,8 +754,49 @@ export const PIPView: React.FC<PIPViewProps> = ({
         </div>
       )}
 
-      {/* Top Header Bar */}
-      <div className="bg-white p-4 lg:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* Sub-tab Navigation: Usulan PIP vs Ket. Desil */}
+      <div className="flex items-center gap-1.5 p-1 bg-slate-200/80 rounded-2xl w-fit border border-slate-300/60 shadow-xs">
+        <button
+          type="button"
+          onClick={() => setActivePipSubTab('usulan')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activePipSubTab === 'usulan'
+              ? 'bg-white text-indigo-700 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4 text-indigo-600" />
+          <span>Usulan PIP</span>
+          <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+            {totalTerusul}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActivePipSubTab('desil')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activePipSubTab === 'desil'
+              ? 'bg-white text-indigo-700 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          <span>Ket. Desil</span>
+        </button>
+      </div>
+
+      {activePipSubTab === 'desil' ? (
+        <KetDesilTab
+          students={students}
+          appConfig={appConfig}
+          currentUser={currentUser}
+          waliKelasList={waliKelasList}
+          showToast={showToast}
+        />
+      ) : (
+        <>
+          {/* Top Header Bar */}
+          <div className="bg-white p-4 lg:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <GraduationCap className="w-5 h-5 text-indigo-600" /> Usulan PIP
@@ -794,13 +871,23 @@ export const PIPView: React.FC<PIPViewProps> = ({
           </button>
 
           {isAdmin && (
-            <button
-              onClick={handleDownloadExcel}
-              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer shrink-0"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download Excel</span>
-            </button>
+            <>
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer shrink-0"
+                title="Smart Impor data Usulan PIP dari file Excel"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Smart Impor</span>
+              </button>
+              <button
+                onClick={handleDownloadExcel}
+                className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Excel</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1380,6 +1467,19 @@ export const PIPView: React.FC<PIPViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Smart Impor Usulan PIP - Khusus Admin */}
+      {isAdmin && (
+        <PIPImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          students={students}
+          currentPipList={pipList}
+          onApplyImport={handleApplyImportPIP}
+        />
+      )}
+        </>
       )}
     </div>
   );

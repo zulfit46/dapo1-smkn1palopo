@@ -10,7 +10,7 @@ import { INITIAL_WALI_KELAS, INITIAL_WALI_KELAS_LIST } from './data/initialWaliK
 import { INITIAL_JURUSAN_LIST } from './data/initialJurusan';
 import { INITIAL_GTK_LIST } from './data/initialGTK';
 import { INITIAL_PEMBELAJARAN_LIST } from './data/initialPembelajaran';
-import { fetchStudentsDirectly, syncVervalDirectly, saveStudentDirectly, fetchGTKDirectly, fetchPembelajaranDirectly, fetchWaliKelasFromSheet, LOCAL_STORAGE_WALIKELAS_KEY, fetchJurusanFromSheet, LOCAL_STORAGE_JURUSAN_KEY } from './services/sheetsSync';
+import { fetchStudentsDirectly, syncVervalDirectly, saveStudentDirectly, fetchGTKDirectly, fetchPembelajaranDirectly, fetchWaliKelasFromSheet, isValidWaliKelasList, LOCAL_STORAGE_WALIKELAS_KEY, fetchJurusanFromSheet, LOCAL_STORAGE_JURUSAN_KEY } from './services/sheetsSync';
 import { safeGetItem, safeSetItem } from './utils/storage';
 import { isUserRole } from './utils/authUtils';
 import { DAPO1_BASE64 } from './assets/dapo1Base64';
@@ -104,12 +104,16 @@ export default function App() {
 
   const [waliKelasList, setWaliKelasList] = useState<WaliKelas[]>(() => {
     const cached = safeGetItem<WaliKelas[]>(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
-    return Array.isArray(cached) && cached.length > 0 ? cached : INITIAL_WALI_KELAS_LIST;
+    if (isValidWaliKelasList(cached)) {
+      return cached;
+    }
+    safeSetItem(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
+    return INITIAL_WALI_KELAS_LIST;
   });
 
   const [waliKelasMap, setWaliKelasMap] = useState<Record<string, string>>(() => {
-    const list = safeGetItem<WaliKelas[]>(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
-    const validList = Array.isArray(list) && list.length > 0 ? list : INITIAL_WALI_KELAS_LIST;
+    const cached = safeGetItem<WaliKelas[]>(LOCAL_STORAGE_WALIKELAS_KEY, INITIAL_WALI_KELAS_LIST);
+    const validList = isValidWaliKelasList(cached) ? cached : INITIAL_WALI_KELAS_LIST;
     return validList.reduce((acc, curr) => {
       acc[curr.kelas] = curr.nama;
       return acc;
@@ -843,6 +847,11 @@ export default function App() {
               gtkList={gtkList} 
               pembelajaranList={pembelajaranList}
               currentUser={currentUser} 
+              appConfig={appConfig}
+              onImportGTK={(newList) => {
+                setGtkList(newList);
+                safeSetItem('dapodik_cached_gtk', newList);
+              }}
               onNavigateTab={(tab) => {
                 if (isTabPermitted(tab, currentUser, waliKelasList)) {
                   setActiveTab(tab);
@@ -876,6 +885,10 @@ export default function App() {
               waliKelasList={waliKelasList}
               theme={theme}
               appConfig={appConfig}
+              onImportPembelajaran={(newList) => {
+                setPembelajaranList(newList);
+                safeSetItem('dapodik_cached_pembelajaran', newList);
+              }}
               onRefresh={() => fetchStudentsData(true)}
               isRefreshing={isRefreshing}
             />
@@ -888,6 +901,10 @@ export default function App() {
               currentUser={currentUser}
               theme={theme}
               appConfig={appConfig}
+              onImportGTK={(newList) => {
+                setGtkList(newList);
+                safeSetItem('dapodik_cached_gtk', newList);
+              }}
               onRefresh={() => fetchStudentsData(true)}
               isRefreshing={isRefreshing}
             />

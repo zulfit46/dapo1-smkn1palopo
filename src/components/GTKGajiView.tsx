@@ -23,7 +23,8 @@ import {
   Receipt,
   Download,
   RotateCcw,
-  Calendar
+  Calendar,
+  Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -35,6 +36,7 @@ import { fetchGajiFromSheet, saveGajiDirectly, syncAllGajiDirectly, deleteGajiDi
 import { safeGetItem, safeSetItem } from '../utils/storage';
 import { formatRupiah } from '../utils/dateUtils';
 import { isUserRole, isOwnerOfRecord } from '../utils/authUtils';
+import { GTKGajiImportModal } from './GTKGajiImportModal';
 
 const LOCAL_STORAGE_GAJI_KEY = 'dapodik_cached_gaji';
 
@@ -90,7 +92,29 @@ export const GTKGajiView: React.FC<GTKGajiViewProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Handler Terapkan Smart Impor Gaji GTK
+  const handleApplyImportGaji = async (
+    finalList: GajiData[],
+    mode: 'merge' | 'replace',
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number }
+  ) => {
+    setGajiList(finalList);
+    safeSetItem(LOCAL_STORAGE_GAJI_KEY, finalList);
+    setNotification({
+      type: 'success',
+      message: `Smart Impor berhasil (${stats.matchingCount} diperbarui, ${stats.newCount} baru, total ${stats.finalTotal} data gaji)!`
+    });
+    setTimeout(() => setNotification(null), 6000);
+
+    if (appConfig?.webAppUrl) {
+      syncAllGajiDirectly(appConfig.webAppUrl, finalList, mode).catch((err) => {
+        console.warn('Latar belakang sync Gaji Sheets gagal:', err);
+      });
+    }
+  };
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -543,12 +567,27 @@ export const GTKGajiView: React.FC<GTKGajiViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                <Banknote className="w-5 h-5" />
+                <Banknote className="w-5 h-5 text-emerald-600" />
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900">Data Gaji GTK</h2>
+                <p className="text-xs text-slate-500">Pencatatan rincian gaji pokok dan penerimaan bersih pegawai</p>
               </div>
             </div>
+
+            {isAdmin && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-all shrink-0 cursor-pointer"
+                  title="Smart Impor Excel Gaji GTK (sheet: gaji)"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-100" />
+                  <span>Smart Impor</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Search Bar & Column Toggle */}
@@ -1255,6 +1294,14 @@ export const GTKGajiView: React.FC<GTKGajiViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Smart Import Modal Gaji GTK */}
+      <GTKGajiImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        currentGajiList={gajiList}
+        onApplyImport={handleApplyImportGaji}
+      />
     </div>
   );
 };

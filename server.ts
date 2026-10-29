@@ -9,7 +9,7 @@ import { INITIAL_GTK_LIST } from "./src/data/initialGTK.js";
 import { INITIAL_RIWAYAT_PANGKAT, INITIAL_RIWAYAT_KGB } from "./src/data/initialPangkatKGB.js";
 import { INITIAL_PEMBELAJARAN_LIST } from "./src/data/initialPembelajaran.js";
 import { INITIAL_GAJI_LIST } from "./src/data/initialGaji.js";
-import { Student, AttendanceRecord, AppConfig, WaliKelas, Jurusan, GTKData, RiwayatPangkat, RiwayatKGB, PembelajaranData, GajiData, normalizeStudent } from "./src/types.js";
+import { Student, AttendanceRecord, AppConfig, WaliKelas, Jurusan, GTKData, RiwayatPangkat, RiwayatKGB, PembelajaranData, GajiData, DesilData, normalizeStudent } from "./src/types.js";
 
 // In-memory data storage
 let studentList: Student[] = INITIAL_STUDENTS.map(normalizeStudent);
@@ -24,6 +24,7 @@ let cachedKGBList: RiwayatKGB[] = [...INITIAL_RIWAYAT_KGB];
 let cachedGajiList: GajiData[] = [...INITIAL_GAJI_LIST];
 let cachedPembelajaranList: PembelajaranData[] = [];
 let isPembelajaranLoadedFromSheets = false;
+let cachedDesilList: DesilData[] = [];
 
 // Persistent Allowed Download Headers for GTK
 const HEADERS_CACHE_FILE = path.join(process.cwd(), 'gtk_download_headers.json');
@@ -332,51 +333,140 @@ async function fetchWaliKelasFromGoogleSheets(): Promise<{ map: Record<string, s
   }
 
   fetchWaliKelasPromise = (async () => {
-    if (appConfig.spreadsheetId) {
+    // 1. Coba ambil dari Google Apps Script Web App (?sheet=walikelas&target=walikelas)
+    if (appConfig.webAppUrl) {
       try {
-        console.log('Fetching Wali Kelas via Google Sheets GViz endpoint...');
-        const gvizUrl = `https://docs.google.com/spreadsheets/d/${appConfig.spreadsheetId}/gviz/tq?tqx=out:json&sheet=walikelas&headers=1`;
-        const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(25000) });
-        if (res.ok) {
-          const text = await res.text();
-          const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
-          if (jsonText) {
-            const parsed = JSON.parse(jsonText);
-            const rawRows = parsed.table?.rows || [];
+        const gasUrl = `${appConfig.webAppUrl}${appConfig.webAppUrl.includes('?') ? '&' : '?'}sheet=walikelas&target=walikelas&_t=${Date.now()}`;
+        const gasRes = await fetch(gasUrl, { signal: AbortSignal.timeout(12000) });
+        if (gasRes.ok) {
+          const json = await gasRes.json().catch(() => null);
+          if (json?.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+            // Safety check: pastikan bukan data siswa yang dikembalikan
+            const isStudentData = json.target === 'data' || json.data.some((r: any) => r.nisn || r.nipd || r.t_lahir);
+            if (!isStudentData) {
+              const waliKelasMap: Record<string, string> = {};
+              const waliKelasList: WaliKelas[] = [];
+              const classCount: Record<string, number> = {};
 
-            const waliKelasMap: Record<string, string> = {};
-            const waliKelasList: WaliKelas[] = [];
-
-            rawRows.forEach((rowObj: any) => {
-              const cells = rowObj.c;
-              if (cells && cells.length >= 2) {
-                const k = cells[0]?.v ? String(cells[0].v).trim() : '';
-                const w = cells[1]?.v ? String(cells[1].v).trim() : '';
-                const n = cells.length >= 3 && cells[2]?.v !== null && cells[2]?.v !== undefined ? String(cells[2].v).trim() : '';
+              json.data.forEach((r: any) => {
+                const k = String(r.kelas || r.Kelas || r.rombel || '').trim();
+                const w = String(r.nama || r.Nama || r.walikelas || '').trim();
+                const n = String(r.nip || r.NIP || '').trim();
                 if (k && w && k.toLowerCase() !== 'kelas') {
+                  classCount[k] = (classCount[k] || 0) + 1;
                   waliKelasMap[k] = w;
-                  waliKelasList.push({
-                    kelas: k,
-                    nama: w,
-                    nip: n
-                  });
+                  waliKelasList.push({ kelas: k, nama: w, nip: n });
                 }
-              }
-            });
+              });
 
-            if (waliKelasList.length > 0) {
-              cachedWaliKelasMap = waliKelasMap;
-              cachedWaliKelasList = waliKelasList;
-              console.log(`Successfully fetched ${waliKelasList.length} Wali Kelas entries with NIP from sheet!`);
-              return { map: waliKelasMap, list: waliKelasList };
+              // Jika satu kelas muncul lebih dari 2 kali, kemungkinan besar data siswa rombel
+              const hasExcessiveDuplicates = Object.values(classCount).some(cnt => cnt > 2);
+              if (!hasExcessiveDuplicates && waliKelasList.length > 0) {
+                cachedWaliKelasMap = waliKelasMap;
+                cachedWaliKelasList = waliKelasList;
+                console.log(`[WaliKelas] Berhasil memuat ${waliKelasList.length} wali kelas dari GAS Web App!`);
+                return { map: waliKelasMap, list: waliKelasList };
+              }
             }
           }
         }
-      } catch (err: any) {
-        if (err?.name === 'TimeoutError' || String(err).includes('timeout')) {
-          console.log("Koneksi GViz sheet walikelas timeout, menggunakan cache data lokal.");
-        } else {
-          console.warn("Catatan: Sheet walikelas tidak dapat diakses online saat ini, menggunakan cache data lokal.", err?.message || err);
+      } catch (gasErr: any) {
+        console.warn("[WaliKelas] Gagal fetch dari GAS:", gasErr?.message || gasErr);
+      }
+    }
+
+    // 2. Coba via Google Sheets GViz endpoint sheet 'walikelas'
+    if (appConfig.spreadsheetId) {
+      const candidates = ['walikelas', 'wali_kelas', 'WaliKelas'];
+      for (const sheetName of candidates) {
+        try {
+          console.log(`Fetching Wali Kelas via Google Sheets GViz endpoint (${sheetName})...`);
+          const gvizUrl = `https://docs.google.com/spreadsheets/d/${appConfig.spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}&headers=1`;
+          const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(20000) });
+          if (res.ok) {
+            const text = await res.text();
+            const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+            if (jsonText) {
+              const parsed = JSON.parse(jsonText);
+              const rawRows = parsed.table?.rows || [];
+              const cols = parsed.table?.cols || [];
+
+              if (rawRows.length > 0) {
+                let headers: string[] = [];
+                let startIdx = 0;
+                const hasColLabels = cols.some((c: any) => c.label && c.label.trim() !== '');
+                if (hasColLabels) {
+                  headers = cols.map((c: any) => String(c.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+                  startIdx = 0;
+                } else {
+                  headers = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '') || [];
+                  startIdx = 1;
+                }
+
+                // Safety check: Jika spreadsheet mengembalikan sheet siswa karena tab walikelas tidak ada
+                const isStudentFallback = headers.some(h => 
+                  h === 'nisn' || h === 'nipd' || h === 'nik' || h === 'tlahir' || h === 'tgllahir' || 
+                  h === 'namaayah' || h === 'namaibu' || h === 'nokps' || h === 'regakta'
+                );
+                if (isStudentFallback) {
+                  console.warn(`[WaliKelas] Sheet "${sheetName}" mengembalikan data siswa (fallback GViz). Mengabaikan agar nama siswa tidak terpetakan.`);
+                  continue;
+                }
+
+                const kelasIdx = headers.findIndex(h => h === 'kelas' || h === 'rombel');
+                const namaIdx = headers.findIndex(h => h === 'nama' || h === 'walikelas' || h === 'namawali');
+                const nipIdx = headers.findIndex(h => h === 'nip');
+
+                const kCol = kelasIdx >= 0 ? kelasIdx : 0;
+                const nCol = namaIdx >= 0 ? namaIdx : 1;
+                const pCol = nipIdx >= 0 ? nipIdx : 2;
+
+                const waliKelasMap: Record<string, string> = {};
+                const waliKelasList: WaliKelas[] = [];
+                const classCount: Record<string, number> = {};
+
+                for (let i = startIdx; i < rawRows.length; i++) {
+                  const cells = rawRows[i]?.c;
+                  if (!cells) continue;
+
+                  const getVal = (idx: number) => {
+                    if (idx < 0 || !cells[idx]) return '';
+                    const c = cells[idx];
+                    return c.f || (c.v !== null && c.v !== undefined ? String(c.v).trim() : '');
+                  };
+
+                  const k = getVal(kCol);
+                  const w = getVal(nCol);
+                  const n = getVal(pCol);
+
+                  if (k && w && k.toLowerCase() !== 'kelas') {
+                    classCount[k] = (classCount[k] || 0) + 1;
+                    waliKelasMap[k] = w;
+                    waliKelasList.push({
+                      kelas: k,
+                      nama: w,
+                      nip: n
+                    });
+                  }
+                }
+
+                // Jika terdeteksi duplikasi rombel massal (> 2 per rombel), ini adalah baris siswa
+                const hasExcessiveDuplicates = Object.values(classCount).some(cnt => cnt > 2);
+                if (!hasExcessiveDuplicates && waliKelasList.length > 0) {
+                  cachedWaliKelasMap = waliKelasMap;
+                  cachedWaliKelasList = waliKelasList;
+                  console.log(`Successfully fetched ${waliKelasList.length} Wali Kelas entries from sheet "${sheetName}"!`);
+                  return { map: waliKelasMap, list: waliKelasList };
+                }
+              }
+            }
+          }
+        } catch (err: any) {
+          if (err?.name === 'TimeoutError' || String(err).includes('timeout')) {
+            console.log(`Koneksi GViz sheet ${sheetName} timeout.`);
+          } else {
+            console.warn(`Catatan: Sheet ${sheetName} tidak dapat diakses:`, err?.message || err);
+          }
         }
       }
     }
@@ -470,6 +560,100 @@ async function fetchJurusanFromGoogleSheets(): Promise<Jurusan[]> {
   });
 
   return fetchJurusanPromise;
+}
+
+// Helper to fetch Desil data from sheet 'desil'
+let fetchDesilPromise: Promise<DesilData[]> | null = null;
+
+async function fetchDesilFromGoogleSheets(force: boolean = false): Promise<DesilData[]> {
+  if (force) {
+    cachedDesilList = [];
+    fetchDesilPromise = null;
+  } else if (fetchDesilPromise) {
+    return fetchDesilPromise;
+  }
+
+  fetchDesilPromise = (async () => {
+    if (appConfig.spreadsheetId) {
+      try {
+        console.log('Fetching Desil via Google Sheets GViz endpoint...');
+        const gvizUrl = `https://docs.google.com/spreadsheets/d/${appConfig.spreadsheetId}/gviz/tq?tqx=out:json&sheet=desil&_t=${Date.now()}`;
+        const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(20000) });
+        if (res.ok) {
+          const text = await res.text();
+          const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+          if (jsonText) {
+            const parsed = JSON.parse(jsonText);
+            const rawRows = parsed.table?.rows || [];
+            const cols = parsed.table?.cols || [];
+            if (rawRows.length > 0) {
+              let headerRow: string[] = [];
+              let startIdx = 0;
+              const hasColLabels = cols.some((c: any) => c.label && c.label.trim() !== '');
+              if (hasColLabels) {
+                headerRow = cols.map((c: any) => String(c.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+                startIdx = 0;
+              } else {
+                headerRow = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '') || [];
+                startIdx = 1;
+              }
+
+              const nisnIdx = headerRow.indexOf('nisn') >= 0 ? headerRow.indexOf('nisn') : 0;
+              const desilIdx = headerRow.indexOf('desil') >= 0 ? headerRow.indexOf('desil') : 1;
+              const ketPipIdx = headerRow.findIndex(h => h === 'ketpip' || h === 'ket_pip' || h === 'pip' || h === 'keteranganpip');
+
+              const list: DesilData[] = [];
+              for (let i = startIdx; i < rawRows.length; i++) {
+                const row = rawRows[i]?.c;
+                if (!row) continue;
+                const nisn = row[nisnIdx]?.v !== null && row[nisnIdx]?.v !== undefined ? String(row[nisnIdx].f || row[nisnIdx].v).trim() : '';
+                const desil = row[desilIdx]?.v !== null && row[desilIdx]?.v !== undefined ? String(row[desilIdx].f || row[desilIdx].v).trim() : '';
+                const ket_pip = ketPipIdx >= 0 && row[ketPipIdx]?.v !== null && row[ketPipIdx]?.v !== undefined ? String(row[ketPipIdx].f || row[ketPipIdx].v).trim() : '';
+                if (nisn) {
+                  list.push({ nisn, desil, ket_pip });
+                }
+              }
+
+              if (list.length > 0) {
+                cachedDesilList = list;
+                console.log(`Successfully fetched ${list.length} Desil entries from sheet!`);
+                return list;
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn('Catatan: Sheet desil belum dapat diakses via GViz, mencoba fallback...', err?.message || err);
+      }
+    }
+
+    // Fallback: Google Apps Script Web App (?sheet=desil)
+    if (appConfig.webAppUrl) {
+      try {
+        const url = appConfig.webAppUrl + (appConfig.webAppUrl.includes('?') ? '&' : '?') + 'sheet=desil&target=desil&_t=' + Date.now();
+        const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
+            const list: DesilData[] = json.data.map((item: any) => ({
+              nisn: String(item.nisn || item.NISN || '').trim(),
+              desil: String(item.desil || item.Desil || '').trim(),
+              ket_pip: String(item.ket_pip || item.ketPip || item.Ket_PIP || item.ket_PIP || '').trim()
+            })).filter((d: DesilData) => Boolean(d.nisn));
+
+            cachedDesilList = list;
+            return list;
+          }
+        }
+      } catch {}
+    }
+
+    return cachedDesilList;
+  })().finally(() => {
+    fetchDesilPromise = null;
+  });
+
+  return fetchDesilPromise;
 }
 
 // Helper to fetch GTK data from sheet 'gtk'
@@ -2383,15 +2567,475 @@ async function startServer() {
     res.json({ status: "success", message: "Data usulan PIP berhasil disimpan", data: { nisn, nama, alasan_layak, status } });
   });
 
+  // POST Smart Import / Batch Import PIP
+  app.post("/api/pip/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ status: "error", message: "Data usulan PIP tidak valid" });
+      }
+
+      console.log(`[PIP Import] Memproses ${items.length} data (mode: ${mode || 'merge'})...`);
+
+      const formatted = items.map((p: any, idx: number) => {
+        const alasan = String(p.alasan_layak || p.alasan_usul || p.alasanLayak || '').trim();
+        const rawStatus = String(p.status || '').trim();
+        const status = (rawStatus === 'Usulan Sekolah' || rawStatus === 'Usulan Luar') ? rawStatus : (alasan ? 'Usulan Sekolah' : 'Belum diusul');
+        return {
+          no: p.no || idx + 1,
+          nisn: String(p.nisn || p.NISN || '').trim(),
+          nama: String(p.nama || p.Nama_Murid || p.nama_murid || '').trim(),
+          alasan_layak: alasan,
+          alasanLayak: alasan,
+          status,
+          rowIndex: p.rowIndex || idx + 2
+        };
+      });
+
+      if (mode === 'replace') {
+        cachedPIPList = formatted;
+      } else {
+        // Smart Merge: update existing by NISN, append new
+        const map = new Map<string, any>();
+        cachedPIPList.forEach(p => {
+          const key = String(p.nisn || '').trim();
+          if (key) map.set(key, p);
+        });
+        formatted.forEach(item => {
+          const key = String(item.nisn || '').trim();
+          if (key && map.has(key)) {
+            const existing = map.get(key);
+            map.set(key, { ...existing, ...item });
+          } else if (key) {
+            map.set(key, item);
+          }
+        });
+        cachedPIPList = Array.from(map.values()).map((it, idx) => ({ ...it, no: idx + 1 }));
+      }
+
+      // Teruskan ke Google Apps Script Web App jika tersedia
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "importAllPIP",
+            target: "pip",
+            items: formatted.map(p => ({
+              nisn: p.nisn,
+              nama: p.nama,
+              nama_murid: p.nama,
+              alasan_layak: p.alasan_layak,
+              alasan_usul: p.alasan_layak,
+              status: p.status
+            })),
+            mode: mode || "merge"
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 35000);
+        } catch (gasErr) {
+          console.warn("[PIP Import] Kirim ke GAS Web App gagal, data tetap tersimpan di server:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan menyinkronkan ${items.length} data usulan PIP!`,
+        total: cachedPIPList.length,
+        list: cachedPIPList
+      });
+    } catch (err: any) {
+      console.error("[PIP Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor data usulan PIP"
+      });
+    }
+  });
+
+  // POST Import GTK (Smart Merge / Replace)
+  app.post("/api/gtk/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data GTK tidak boleh kosong" });
+      }
+
+      const formatted = items.map((g: any, idx: number) => ({
+        ...g,
+        no: g.no || idx + 1,
+        id: g.id || g.nip || g.nuptk || `GTK-${idx + 1}`
+      }));
+
+      if (mode === 'replace') {
+        cachedGTKList = formatted;
+      } else {
+        const map = new Map<string, any>();
+        cachedGTKList.forEach((g: any) => {
+          const k = String(g.nip || g.nuptk || g.nama || '').trim().toLowerCase();
+          if (k) map.set(k, g);
+        });
+        formatted.forEach((item: any) => {
+          const k = String(item.nip || item.nuptk || item.nama || '').trim().toLowerCase();
+          if (k && map.has(k)) {
+            const prev = map.get(k);
+            map.set(k, { ...prev, ...item });
+          } else if (k) {
+            map.set(k, item);
+          }
+        });
+        cachedGTKList = Array.from(map.values()).map((it, idx) => ({ ...it, no: idx + 1 }));
+      }
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "syncAll",
+            target: "gtk",
+            gtk: formatted,
+            data: formatted,
+            mode: mode || "merge"
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 45000);
+        } catch (gasErr) {
+          console.warn("[GTK Import] Kirim ke GAS Web App gagal, data tetap tersimpan di server:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan menyinkronkan ${items.length} data GTK!`,
+        total: cachedGTKList.length,
+        list: cachedGTKList
+      });
+    } catch (err: any) {
+      console.error("[GTK Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor data GTK"
+      });
+    }
+  });
+
+  // POST Import PTK & Tugas Tambahan (Sheet: ptk)
+  app.post("/api/ptk/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data PTK tidak boleh kosong" });
+      }
+
+      const formatted = items.map((p: any, idx: number) => ({
+        ...p,
+        no: p.no || idx + 1,
+        id: p.id || p.nip || p.nuptk || `PTK-${idx + 1}`
+      }));
+
+      // Update cachedGTKList dengan nilai PTK terbaru (Tugas Tambahan, Jam, dsb)
+      const cleanPersonName = (n: string) =>
+        String(n || '')
+          .toLowerCase()
+          .replace(/,\s*(s\.?pd|s\.?kom|m\.?pd|s\.?e|s\.?t|s\.?ag|m\.?si|drs\.?|dr\.?|h\.?|hj\.?|gr\.?|s\.?sos|m\.?kom|m\.?ti)/gi, '')
+          .replace(/[^a-z0-9]/g, '')
+          .trim();
+
+      const matchedIndices = new Set<number>();
+      cachedGTKList = cachedGTKList.map(gtk => {
+        const gNip = String(gtk.nip || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const gNuptk = String(gtk.nuptk || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const gNik = String(gtk.nik || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const gNama = cleanPersonName(gtk.nama);
+
+        const matchIdx = formatted.findIndex((item: any) => {
+          const iNip = String(item.nip || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          const iNuptk = String(item.nuptk || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          const iNik = String(item.nik || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          const iNama = cleanPersonName(item.nama);
+          return (iNip && gNip && iNip === gNip) ||
+                 (iNuptk && gNuptk && iNuptk === gNuptk) ||
+                 (iNik && gNik && iNik === gNik) ||
+                 (iNama && gNama && iNama === gNama);
+        });
+
+        if (matchIdx >= 0) {
+          matchedIndices.add(matchIdx);
+          const ptk = formatted[matchIdx];
+          return {
+            ...gtk,
+            nama: ptk.nama || gtk.nama,
+            nuptk: ptk.nuptk || gtk.nuptk,
+            nip: ptk.nip || gtk.nip,
+            jk: ptk.jk || gtk.jk,
+            tempatLahir: ptk.tempatLahir || gtk.tempatLahir,
+            tanggalLahir: ptk.tanggalLahir || gtk.tanggalLahir,
+            statusKepegawaian: ptk.statusKepegawaian || gtk.statusKepegawaian,
+            jenisPtk: ptk.jenisPtk || gtk.jenisPtk,
+            gelarDepan: ptk.gelarDepan || gtk.gelarDepan,
+            gelarBelakang: ptk.gelarBelakang || gtk.gelarBelakang,
+            jenjang: ptk.jenjang || gtk.jenjang,
+            jurusanProdi: ptk.jurusanProdi || gtk.jurusanProdi,
+            sertifikasi: ptk.sertifikasi || gtk.sertifikasi,
+            tmtKerja: ptk.tmtKerja || gtk.tmtKerja,
+            tugasTambahan: ptk.tugasTambahan || gtk.tugasTambahan,
+            mengajar: ptk.mengajar || gtk.mengajar,
+            jamTugasTambahan: ptk.jamTugasTambahan || gtk.jamTugasTambahan,
+            jjm: ptk.jjm || gtk.jjm,
+            totalJjm: ptk.totalJjm || gtk.totalJjm,
+            siswa: ptk.siswa || gtk.siswa,
+            kompetensi: ptk.kompetensi || gtk.kompetensi,
+            nik: ptk.nik || gtk.nik,
+            jabatanPtk: ptk.jabatanPtk || gtk.jabatanPtk,
+            jabatan_ptk: ptk.jabatanPtk || gtk.jabatan_ptk
+          };
+        }
+        return gtk;
+      });
+
+      // Jika ada data PTK baru yang belum ada di GTK, tambahkan
+      if (mode === 'merge') {
+        formatted.forEach((item: any, idx: number) => {
+          if (!matchedIndices.has(idx)) {
+            cachedGTKList.push({
+              id: item.nip && item.nip !== '-' ? item.nip : (item.nuptk && item.nuptk !== '-' ? item.nuptk : `PTK-NEW-${idx + 1}`),
+              no: cachedGTKList.length + 1,
+              nama: item.nama,
+              nuptk: item.nuptk,
+              jk: item.jk || 'L',
+              tempatLahir: item.tempatLahir,
+              tanggalLahir: item.tanggalLahir,
+              nip: item.nip,
+              statusKepegawaian: item.statusKepegawaian,
+              jenisPtk: item.jenisPtk,
+              gelarDepan: item.gelarDepan,
+              gelarBelakang: item.gelarBelakang,
+              jenjang: item.jenjang,
+              jurusanProdi: item.jurusanProdi,
+              sertifikasi: item.sertifikasi,
+              tmtKerja: item.tmtKerja,
+              tugasTambahan: item.tugasTambahan,
+              mengajar: item.mengajar,
+              jamTugasTambahan: item.jamTugasTambahan,
+              jjm: item.jjm,
+              totalJjm: item.totalJjm,
+              siswa: item.siswa,
+              kompetensi: item.kompetensi,
+              nik: item.nik,
+              jabatanPtk: item.jabatanPtk,
+              jabatan_ptk: item.jabatanPtk
+            });
+          }
+        });
+      }
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "syncAll",
+            target: "ptk",
+            ptk: formatted,
+            items: formatted,
+            data: formatted,
+            mode: mode || "merge"
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 45000);
+        } catch (gasErr) {
+          console.warn("[PTK Import] Kirim ke GAS Web App gagal, data tetap tersimpan di server:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan menyinkronkan ${items.length} data PTK & tugas tambahan ke sheet ptk!`,
+        total: cachedGTKList.length,
+        list: cachedGTKList
+      });
+    } catch (err: any) {
+      console.error("[PTK Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor data PTK"
+      });
+    }
+  });
+
+  // POST Import Kenaikan Pangkat
+  app.post("/api/pangkat/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data pangkat tidak boleh kosong" });
+      }
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "syncAll",
+            target: "naikpangkat",
+            items,
+            mode: mode || "merge"
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 35000);
+        } catch (gasErr) {
+          console.warn("[Pangkat Import] Kirim ke GAS Web App gagal:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan menyinkronkan ${items.length} riwayat kepangkatan!`
+      });
+    } catch (err: any) {
+      console.error("[Pangkat Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor riwayat kepangkatan"
+      });
+    }
+  });
+
+  // POST Import KGB
+  app.post("/api/kgb/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data KGB tidak boleh kosong" });
+      }
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "syncAll",
+            target: "kgb",
+            items,
+            mode: mode || "merge"
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 35000);
+        } catch (gasErr) {
+          console.warn("[KGB Import] Kirim ke GAS Web App gagal:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan menyinkronkan ${items.length} riwayat KGB!`
+      });
+    } catch (err: any) {
+      console.error("[KGB Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor riwayat KGB"
+      });
+    }
+  });
+
+  // POST Import Gaji
+  app.post("/api/gaji/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data gaji tidak boleh kosong" });
+      }
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "syncAll",
+            target: "gaji",
+            items,
+            gaji: items,
+            mode: mode || "merge"
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 35000);
+        } catch (gasErr) {
+          console.warn("[Gaji Import] Kirim ke GAS Web App gagal:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan menyinkronkan ${items.length} data gaji GTK!`
+      });
+    } catch (err: any) {
+      console.error("[Gaji Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor data gaji"
+      });
+    }
+  });
+
+  // POST Import Pembelajaran
+  app.post("/api/pembelajaran/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data pembelajaran tidak boleh kosong" });
+      }
+
+      const formatted = items.map((p: any, idx: number) => ({
+        ...p,
+        no: p.no || idx + 1,
+        id: p.id || `PEMB-${idx + 1}`
+      }));
+
+      if (mode === 'replace') {
+        cachedPembelajaranList = formatted;
+      } else {
+        const map = new Map<string, any>();
+        cachedPembelajaranList.forEach((p: any) => {
+          const k = `${p.nuptk || p.namaPtk || ''}_${p.namaRombel || ''}_${p.namaMatpel || ''}`.toLowerCase();
+          map.set(k, p);
+        });
+        formatted.forEach((item: any) => {
+          const k = `${item.nuptk || item.namaPtk || ''}_${item.namaRombel || ''}_${item.namaMatpel || ''}`.toLowerCase();
+          if (map.has(k)) {
+            const prev = map.get(k);
+            map.set(k, { ...prev, ...item });
+          } else {
+            map.set(k, item);
+          }
+        });
+        cachedPembelajaranList = Array.from(map.values()).map((it, idx) => ({ ...it, no: idx + 1 }));
+      }
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "syncAll",
+            target: "pembelajaran",
+            items: formatted,
+            pembelajaran: formatted,
+            mode: mode || "merge"
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 40000);
+        } catch (gasErr) {
+          console.warn("[Pembelajaran Import] Kirim ke GAS Web App gagal:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil mengimpor dan menyinkronkan ${items.length} jadwal pembelajaran!`,
+        total: cachedPembelajaranList.length,
+        list: cachedPembelajaranList
+      });
+    } catch (err: any) {
+      console.error("[Pembelajaran Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor jadwal pembelajaran"
+      });
+    }
+  });
+
   // GET Wali Kelas (Map & List)
   app.get("/api/walikelas", async (req, res) => {
-    if (cachedWaliKelasList.length === 0 || Object.keys(cachedWaliKelasMap).length === 0) {
+    const isForce = req.query.force === 'true';
+    if (isForce || cachedWaliKelasList.length === 0 || Object.keys(cachedWaliKelasMap).length === 0) {
       await fetchWaliKelasFromGoogleSheets();
     }
     res.json({
       status: "success",
-      data: cachedWaliKelasMap,
-      list: cachedWaliKelasList
+      data: cachedWaliKelasList,
+      list: cachedWaliKelasList,
+      map: cachedWaliKelasMap
     });
   });
 
@@ -2529,6 +3173,134 @@ async function startServer() {
       return res.status(500).json({
         status: "error",
         message: err?.message || "Gagal mengimpor data wali kelas"
+      });
+    }
+  });
+
+  // GET Desil Data from sheet 'desil'
+  app.get("/api/desil", async (req, res) => {
+    const isForce = req.query.force === 'true';
+    if (isForce || cachedDesilList.length === 0) {
+      await fetchDesilFromGoogleSheets(isForce);
+    }
+    res.json({
+      status: "success",
+      total: cachedDesilList.length,
+      data: cachedDesilList
+    });
+  });
+
+  // POST Single Desil Update
+  app.post("/api/desil", async (req, res) => {
+    try {
+      const { nisn, desil, ket_pip, ketPip } = req.body;
+      if (!nisn) {
+        return res.status(400).json({ status: "error", message: "NISN wajib diisi" });
+      }
+
+      const cleanNisn = String(nisn).trim();
+      const existingIdx = cachedDesilList.findIndex(
+        d => String(d.nisn).trim() === cleanNisn
+      );
+
+      let finalDesil = "";
+      let finalKetPip = "";
+
+      if (existingIdx >= 0) {
+        if (desil !== undefined) {
+          cachedDesilList[existingIdx].desil = String(desil || "").trim();
+        }
+        if (ket_pip !== undefined || ketPip !== undefined) {
+          cachedDesilList[existingIdx].ket_pip = String(ket_pip !== undefined ? ket_pip : ketPip || "").trim();
+        }
+        finalDesil = cachedDesilList[existingIdx].desil;
+        finalKetPip = cachedDesilList[existingIdx].ket_pip || "";
+      } else {
+        finalDesil = String(desil || "").trim();
+        finalKetPip = String(ket_pip !== undefined ? ket_pip : ketPip || "").trim();
+        cachedDesilList.push({ nisn: cleanNisn, desil: finalDesil, ket_pip: finalKetPip });
+      }
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "saveDesil",
+            target: "desil",
+            nisn: cleanNisn,
+            desil: finalDesil,
+            ket_pip: finalKetPip
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 20000);
+        } catch (gasErr) {
+          console.warn("[Desil Save] Penerusan ke GAS gagal, data tetap tersimpan di server:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: "Status desil & ket_pip berhasil diperbarui",
+        data: { nisn: cleanNisn, desil: finalDesil, ket_pip: finalKetPip }
+      });
+    } catch (err: any) {
+      console.error("[Desil Save] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal menyimpan data desil"
+      });
+    }
+  });
+
+  // POST Import / Sync All Desil Data
+  app.post("/api/desil/import", async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ status: "error", message: "Data desil tidak boleh kosong" });
+      }
+
+      const map = new Map<string, { desil: string; ket_pip: string }>();
+      // Keep existing
+      cachedDesilList.forEach(d => {
+        if (d.nisn) map.set(String(d.nisn).trim(), { desil: String(d.desil || "").trim(), ket_pip: String(d.ket_pip || "").trim() });
+      });
+
+      // Overlay new items
+      items.forEach((it: any) => {
+        const n = String(it.nisn || it.NISN || "").trim();
+        if (n) {
+          const prev = map.get(n) || { desil: "", ket_pip: "" };
+          const newDesil = it.desil !== undefined ? String(it.desil || "").trim() : (it.Desil !== undefined ? String(it.Desil || "").trim() : prev.desil);
+          const newKetPip = it.ket_pip !== undefined ? String(it.ket_pip || "").trim() : (it.ketPip !== undefined ? String(it.ketPip || "").trim() : (it.Ket_PIP !== undefined ? String(it.Ket_PIP || "").trim() : prev.ket_pip));
+          map.set(n, { desil: newDesil, ket_pip: newKetPip });
+        }
+      });
+
+      cachedDesilList = Array.from(map.entries()).map(([nisn, val]) => ({ nisn, desil: val.desil, ket_pip: val.ket_pip }));
+
+      if (appConfig.webAppUrl) {
+        try {
+          const payload = {
+            action: "syncAllDesil",
+            target: "desil",
+            items: cachedDesilList
+          };
+          await sendToGas(appConfig.webAppUrl, payload, 30000);
+        } catch (gasErr) {
+          console.warn("[Desil Import] Penerusan ke GAS gagal, data tetap tersimpan di server:", gasErr);
+        }
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil memperbarui ${cachedDesilList.length} data desil & ket_pip!`,
+        total: cachedDesilList.length,
+        list: cachedDesilList
+      });
+    } catch (err: any) {
+      console.error("[Desil Import] Error:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err?.message || "Gagal mengimpor data desil"
       });
     }
   });
@@ -2911,6 +3683,129 @@ async function startServer() {
         status: "error",
         message: err?.message || "Gagal menyimpan data mutasi masuk ke Google Sheets"
       });
+    }
+  });
+
+  // BATCH SYNC / SMART IMPORT MUTASI MASUK (10 Kolom)
+  app.post("/api/mutasi/masuk/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ status: "error", message: "Daftar data mutasi masuk tidak valid" });
+      }
+
+      console.log(`[Mutasi Masuk Import] Memproses ${items.length} data (mode: ${mode || 'merge'})...`);
+
+      // Update status siswa aktif di memori server jika ada mutasi masuk Diterima
+      items.forEach((m: any) => {
+        if (String(m.status || "").toLowerCase() === "diterima") {
+          const tNisn = String(m.nisn || "").trim();
+          const tNama = String(m.nama || m.nama_siswa || "").trim().toLowerCase();
+          const tVerval = String(m.verval_oleh || m.vervalOleh || "").trim();
+
+          const updateStudentActive = (s: any) => {
+            const isMatch = (tNisn && s.nisn === tNisn) || (tNama && s.nama?.trim().toLowerCase() === tNama);
+            if (isMatch) {
+              return {
+                ...s,
+                status: "Aktif",
+                statusRegistrasi: "Pindahan",
+                ket: "Pindahan",
+                verval_oleh: tVerval || s.verval_oleh,
+                vervalOleh: tVerval || s.vervalOleh
+              };
+            }
+            return s;
+          };
+
+          if (Array.isArray(cachedSheetsData)) cachedSheetsData = cachedSheetsData.map(updateStudentActive);
+          if (Array.isArray(studentList)) studentList = studentList.map(updateStudentActive);
+        }
+      });
+
+      // Sinkronisasi ke Google Apps Script Web App (sheet: mutasi_masuk)
+      if (appConfig.webAppUrl && items.length > 0) {
+        sendToGas(appConfig.webAppUrl, {
+          action: "syncAllMutasiMasuk",
+          target: "mutasi_masuk",
+          items: items,
+          mode: mode || "merge"
+        }, 45000)
+        .then(gasRes => {
+          console.log('[Mutasi Masuk Import] Sync ke Google Apps Script berhasil:', gasRes.json || gasRes.status);
+        })
+        .catch(err => console.warn('[Mutasi Masuk Import] Sync ke Google Apps Script warning:', err?.message || err));
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil memproses ${items.length} data mutasi masuk (${mode === 'merge' ? 'Smart Merge' : 'Timpa Total'})`,
+        total: items.length
+      });
+    } catch (err: any) {
+      console.error("[Mutasi Masuk Import] Error:", err);
+      return res.status(500).json({ status: "error", message: err?.message || "Gagal mengimpor mutasi masuk" });
+    }
+  });
+
+  // BATCH SYNC / SMART IMPORT MUTASI KELUAR (14 Kolom)
+  app.post("/api/mutasi/keluar/import", async (req, res) => {
+    try {
+      const { items, mode } = req.body;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ status: "error", message: "Daftar data mutasi keluar tidak valid" });
+      }
+
+      console.log(`[Mutasi Keluar Import] Memproses ${items.length} data (mode: ${mode || 'merge'})...`);
+
+      // Update status siswa di memori server menjadi "Tidak Aktif"
+      items.forEach((m: any) => {
+        const tNisn = String(m.nisn || "").trim();
+        const tNipd = String(m.nipd || "").trim();
+        const tNama = String(m.nama || "").trim().toLowerCase();
+        const tKet = String(m.ketMutasi || m.ket_mutasi || "Mutasi").trim();
+        const tVerval = String(m.verval_oleh || m.vervalOleh || "").trim();
+
+        const updateStudentInactive = (s: any) => {
+          const isMatch = (tNisn && s.nisn === tNisn) || (tNipd && s.nipd === tNipd) || (tNama && s.nama?.trim().toLowerCase() === tNama);
+          if (isMatch) {
+            return {
+              ...s,
+              status: "Tidak Aktif",
+              ket: tKet,
+              verval_oleh: tVerval || s.verval_oleh,
+              vervalOleh: tVerval || s.vervalOleh
+            };
+          }
+          return s;
+        };
+
+        if (Array.isArray(cachedSheetsData)) cachedSheetsData = cachedSheetsData.map(updateStudentInactive);
+        if (Array.isArray(studentList)) studentList = studentList.map(updateStudentInactive);
+      });
+
+      // Sinkronisasi ke Google Apps Script Web App (sheet: mutasi_keluar)
+      if (appConfig.webAppUrl && items.length > 0) {
+        sendToGas(appConfig.webAppUrl, {
+          action: "syncAllMutasiKeluar",
+          target: "mutasi_keluar",
+          items: items,
+          mode: mode || "merge"
+        }, 45000)
+        .then(gasRes => {
+          console.log('[Mutasi Keluar Import] Sync ke Google Apps Script berhasil:', gasRes.json || gasRes.status);
+        })
+        .catch(err => console.warn('[Mutasi Keluar Import] Sync ke Google Apps Script warning:', err?.message || err));
+      }
+
+      return res.json({
+        status: "success",
+        message: `Berhasil memproses ${items.length} data mutasi keluar (${mode === 'merge' ? 'Smart Merge' : 'Timpa Total'})`,
+        total: items.length
+      });
+    } catch (err: any) {
+      console.error("[Mutasi Keluar Import] Error:", err);
+      return res.status(500).json({ status: "error", message: err?.message || "Gagal mengimpor mutasi keluar" });
     }
   });
 
@@ -3547,6 +4442,9 @@ async function startServer() {
       } catch {}
       try {
         await fetchPembelajaranFromGoogleSheets();
+      } catch {}
+      try {
+        await fetchDesilFromGoogleSheets();
       } catch {}
     }, 500);
   });

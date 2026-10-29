@@ -11,7 +11,9 @@ import {
   EyeOff, 
   Users, 
   Clock, 
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Upload
 } from 'lucide-react';
 import { PembelajaranData, GTKData, AppTheme, AppConfig, WaliKelas } from '../types';
 import { 
@@ -23,6 +25,9 @@ import {
 import { isAdminRole, isUserRole, normalizeNip } from '../utils/authUtils';
 import { formatToDDMMYYYY } from '../utils/dateUtils';
 import { normalizeRawTugasString } from '../utils/tugasTambahanUtils';
+import { PembelajaranImportModal } from './PembelajaranImportModal';
+import { syncAllPembelajaranDirectly } from '../services/sheetsSync';
+import { safeSetItem } from '../utils/storage';
 
 interface PembelajaranViewProps {
   pembelajaranList: PembelajaranData[];
@@ -33,6 +38,7 @@ interface PembelajaranViewProps {
   appConfig?: AppConfig;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  onImportPembelajaran?: (newList: PembelajaranData[]) => void;
 }
 
 export const PembelajaranView: React.FC<PembelajaranViewProps> = ({
@@ -41,12 +47,15 @@ export const PembelajaranView: React.FC<PembelajaranViewProps> = ({
   waliKelasList = [],
   currentUser,
   theme = 'aurora-glass',
+  appConfig,
   onRefresh,
-  isRefreshing = false
+  isRefreshing = false,
+  onImportPembelajaran
 }) => {
   const isUser = isUserRole(currentUser);
   const isAdmin = !currentUser || isAdminRole(currentUser);
   const isGlass = theme === 'aurora-glass';
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Resolve logged-in GTK's name in Pembelajaran data
   const loggedInGtkName = useMemo(() => {
@@ -503,6 +512,29 @@ export const PembelajaranView: React.FC<PembelajaranViewProps> = ({
     showNotification('Konfigurasi header kolom berhasil disimpan.');
   };
 
+  const handleApplyImportPembelajaran = async (
+    finalList: PembelajaranData[],
+    mode: 'merge' | 'replace',
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number }
+  ) => {
+    safeSetItem('dapodik_cached_pembelajaran', finalList);
+    if (onImportPembelajaran) {
+      onImportPembelajaran(finalList);
+    }
+    showNotification(
+      mode === 'merge'
+        ? `Smart Impor berhasil! ${stats.matchingCount} data diperbarui, ${stats.newCount} data baru ditambahkan.`
+        : `Impor Ganti Semua berhasil! Total ${finalList.length} data pembelajaran tersimpan.`
+    );
+    if (appConfig?.webAppUrl) {
+      try {
+        await syncAllPembelajaranDirectly(appConfig.webAppUrl, finalList, mode);
+      } catch (err) {
+        console.warn('Sync pembelajaran ke Google Sheets:', err);
+      }
+    }
+  };
+
   const showNotification = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3500);
@@ -578,6 +610,17 @@ export const PembelajaranView: React.FC<PembelajaranViewProps> = ({
                   {activeColumns.length}/{ALL_PEMBELAJARAN_HEADERS.length}
                 </span>
               </button>
+
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white shadow-xs transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-200" />
+                  <span>Smart Impor</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -960,6 +1003,14 @@ export const PembelajaranView: React.FC<PembelajaranViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Smart Import Modal Pembelajaran */}
+      <PembelajaranImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        currentPembelajaranList={pembelajaranList}
+        onApplyImport={handleApplyImportPembelajaran}
+      />
     </div>
   );
 };

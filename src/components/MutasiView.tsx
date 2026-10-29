@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Student, WaliKelas, MutasiMasukItem, MutasiKeluarItem, AppTheme, GTKData, AppConfig, WilayahItem } from '../types';
+import { Student, WaliKelas, MutasiMasukItem, MutasiKeluarItem, AppTheme, GTKData, AppConfig, WilayahItem, normalizeStudent } from '../types';
 import { safeGetItem, safeSetItem } from '../utils/storage';
 import { isUserRole } from '../utils/authUtils';
 import { formatToDDMMYYYY, parseToYYYYMMDD, parseDateToTimestamp } from '../utils/dateUtils';
@@ -13,11 +13,15 @@ import {
   deleteMultipleMutasiKeluarDirectly,
   uploadMutasiBerkasToDrive,
   generateMutasiBerkasFileName,
+  syncAllMutasiMasukDirectly,
+  syncAllMutasiKeluarDirectly,
   DRIVE_FOLDER_ID_MUTASI_KELUAR
 } from '../services/sheetsSync';
 import * as XLSX from 'xlsx';
 import { CodeGsModal } from './CodeGsModal';
 import { TelegramConfigModal } from './TelegramConfigModal';
+import { MutasiMasukImportModal } from './MutasiMasukImportModal';
+import { MutasiKeluarImportModal } from './MutasiKeluarImportModal';
 import { 
   notifyMutasiMasuk, 
   notifyMutasiKeluar, 
@@ -213,6 +217,10 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
   const [selectedDetail, setSelectedDetail] = useState<MutasiMasukItem | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'info'; message: string; title?: string } | null>(null);
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
+
+  // Smart Import Modal States
+  const [isImportMasukModalOpen, setIsImportMasukModalOpen] = useState<boolean>(false);
+  const [isImportKeluarModalOpen, setIsImportKeluarModalOpen] = useState<boolean>(false);
 
   // Telegram Notification Config State
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
@@ -1282,10 +1290,9 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
     }
   };
 
-  // Export Excel (.xlsx) for Mutasi Keluar with all 15 official headers
+  // Export Excel (.xlsx) resmi untuk Mutasi Keluar (14 Kolom)
   const handleExportKeluarExcel = () => {
     const headers = [
-      'No',
       'NIPD',
       'NISN',
       'Nama',
@@ -1298,12 +1305,11 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
       'alasan_mutasi',
       'upload_berkas',
       'Status',
-      'verval_oleh',
-      'Timestamp'
+      'Timestamp',
+      'verval_oleh'
     ];
 
-    const rows = filteredMutasiKeluar.map((item, idx) => [
-      idx + 1,
+    const rows = filteredMutasiKeluar.map((item) => [
       item.nipd || '',
       item.nisn || '',
       item.nama || '',
@@ -1316,8 +1322,8 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
       item.alasanMutasi || '',
       item.uploadBerkas || '',
       item.status || 'Selesai',
-      item.verval_oleh || item.vervalOleh || '',
-      item.timestamp || ''
+      item.timestamp || '',
+      item.verval_oleh || item.vervalOleh || ''
     ]);
 
     const worksheetData = [headers, ...rows];
@@ -1325,7 +1331,125 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'mutasi_keluar');
     const todayStr = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(wb, `Mutasi_Keluar_SMKN1_Palopo_${todayStr}.xlsx`);
+    XLSX.writeFile(wb, `Mutasi_Keluar_SMKN1_Palopo_14_Kolom_${todayStr}.xlsx`);
+  };
+
+  // Export Excel (.xlsx) resmi untuk Mutasi Masuk (10 Kolom)
+  const handleExportMasukExcel = () => {
+    const headers = [
+      'NISN',
+      'Nama_Siswa',
+      'Provinsi',
+      'Kab_kota',
+      'Kecamatan',
+      'Nama_Sekolah',
+      'Rombel_Tujuan',
+      'Status',
+      'Timestamp',
+      'verval_oleh'
+    ];
+
+    const rows = filteredMutasiMasuk.map((item) => [
+      item.nisn || '',
+      item.nama || '',
+      item.provinsiNama || '',
+      item.kabKotaNama || '',
+      item.kecamatanNama || '',
+      item.sekolahAsal || '',
+      item.rombelTujuan || '',
+      item.status || 'Pending',
+      item.timestamp || '',
+      item.verval_oleh || item.vervalOleh || ''
+    ]);
+
+    const worksheetData = [headers, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'mutasi_masuk');
+    const todayStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `Mutasi_Masuk_SMKN1_Palopo_10_Kolom_${todayStr}.xlsx`);
+  };
+
+  // Terapkan hasil Smart Import Mutasi Masuk
+  const handleApplyImportMasuk = async (
+    finalList: MutasiMasukItem[], 
+    mode: 'merge' | 'replace', 
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number }
+  ) => {
+    setMutasiMasukList(finalList);
+    safeSetItem('dapodik_cached_mutasi_masuk', finalList);
+
+    const targetUrl = appConfig?.webAppUrl || '';
+    syncAllMutasiMasukDirectly(targetUrl, finalList, mode);
+
+    // Jika ada siswa yang statusnya Diterima, tambahkan / update ke data siswa aktif
+    if (onAddStudentToActive) {
+      finalList.forEach(m => {
+        if (m.status === 'Diterima') {
+          onAddStudentToActive(
+            normalizeStudent({
+              id: m.nisn || `STU-IN-${Date.now()}`,
+              nipd: '',
+              nisn: m.nisn,
+              nama: m.nama,
+              jk: 'L',
+              kelas: m.rombelTujuan || 'X RPL 1',
+              sekolahAsal: m.sekolahAsal || '',
+              kecamatan: m.kecamatanNama || '',
+              status: 'Aktif',
+              ket: 'Pindahan',
+              timestamp: m.timestamp || '',
+              vervalOleh: m.verval_oleh || currentUserName
+            })
+          );
+        }
+      });
+    }
+
+    setNotification({
+      type: 'success',
+      title: mode === 'merge' ? 'Smart Merge Mutasi Masuk Berhasil' : 'Timpa Total Berhasil',
+      message: mode === 'merge' 
+        ? `${stats.matchingCount} data diperbarui, ${stats.newCount} mutasi baru ditambahkan. Total: ${finalList.length} data.`
+        : `Berhasil mengganti seluruh data mutasi masuk dengan ${finalList.length} data dari Excel.`
+    });
+    setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Terapkan hasil Smart Import Mutasi Keluar
+  const handleApplyImportKeluar = async (
+    finalList: MutasiKeluarItem[], 
+    mode: 'merge' | 'replace', 
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number }
+  ) => {
+    setMutasiKeluarList(finalList);
+    safeSetItem('dapodik_cached_mutasi_keluar', finalList);
+
+    const targetUrl = appConfig?.webAppUrl || '';
+    syncAllMutasiKeluarDirectly(targetUrl, finalList, mode);
+
+    // Otomatis tandai siswa mutasi keluar menjadi "Tidak Aktif"
+    if (onUpdateStudentStatus) {
+      finalList.forEach(item => {
+        onUpdateStudentStatus(
+          item.nisn,
+          item.nipd || '',
+          item.nama,
+          'Tidak Aktif',
+          item.ketMutasi || 'Mutasi',
+          item.verval_oleh || item.vervalOleh || currentUserName
+        );
+      });
+    }
+
+    setNotification({
+      type: 'success',
+      title: mode === 'merge' ? 'Smart Merge Mutasi Keluar Berhasil' : 'Timpa Total Berhasil',
+      message: mode === 'merge' 
+        ? `${stats.matchingCount} data diperbarui, ${stats.newCount} mutasi baru ditambahkan. Total: ${finalList.length} data.`
+        : `Berhasil mengganti seluruh data mutasi keluar dengan ${finalList.length} data dari Excel.`
+    });
+    setTimeout(() => setNotification(null), 5000);
   };
 
   // Filtered Mutasi Keluar from mutasiKeluarList (Disortir tanggal terbaru berada pada awal / Z-A)
@@ -1917,6 +2041,28 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
                     <option value="Pending">Pending</option>
                   </select>
 
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setIsImportMasukModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs rounded-xl border border-emerald-300 shadow-2xs transition-colors shrink-0 cursor-pointer"
+                      title="Impor data mutasi masuk dari file Excel (.xlsx / .xls)"
+                    >
+                      <Upload className="w-4 h-4 text-emerald-600" />
+                      <span>Impor Excel</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleExportMasukExcel}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl border border-slate-300 shadow-2xs transition-colors shrink-0 cursor-pointer"
+                    title="Ekspor data mutasi masuk ke file Excel (.xlsx) dengan 10 kolom resmi"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                    <span className="hidden sm:inline">Ekspor Excel</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={handleOpenAddForm}
@@ -1935,16 +2081,6 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
                   >
                     <RefreshCw className={`w-4 h-4 text-indigo-600 ${isSyncing || isLoading ? 'animate-spin' : ''}`} />
                     <span>{isSyncing ? 'Memuat...' : 'Muat Ulang'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleExportData}
-                    className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 font-medium text-xs rounded-xl border border-slate-300 shadow-2xs transition-colors cursor-pointer"
-                    title="Ekspor CSV"
-                  >
-                    <Download className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="hidden sm:inline">Ekspor CSV</span>
                   </button>
                 </div>
               </div>
@@ -2931,8 +3067,30 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
                   )}
                 </div>
 
-                {/* Actions: Refresh, Ekspor Excel, Tambah Mutasi */}
+                {/* Actions: Impor Excel, Ekspor Excel, Refresh, Tambah Mutasi */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setIsImportKeluarModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs rounded-xl border border-emerald-300 shadow-2xs transition-colors shrink-0 cursor-pointer"
+                      title="Impor data mutasi keluar dari file Excel (.xlsx / .xls)"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Impor Excel</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleExportKeluarExcel}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl border border-slate-300 shadow-2xs transition-colors shrink-0 cursor-pointer"
+                    title="Ekspor data mutasi keluar ke file Excel (.xlsx) dengan 14 kolom resmi"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="hidden sm:inline">Ekspor Excel</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={handleRefreshKeluar}
@@ -2943,16 +3101,6 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
                     <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 ${isSyncingKeluar ? 'animate-spin' : ''}`} />
                     <span>{isSyncingKeluar ? 'Menyinkronkan...' : 'Refresh Sheet'}</span>
                   </button>
-
-                  {/* <button
-                    type="button"
-                    onClick={handleExportKeluarExcel}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl border border-emerald-600 shadow-2xs transition-colors shrink-0 cursor-pointer"
-                    title="Ekspor data mutasi keluar ke file Excel (.xlsx)"
-                  >
-                    <FileSpreadsheet className="w-4 h-4" />
-                    <span>Ekspor Excel</span>
-                  </button> */}
 
                   <button
                     type="button"
@@ -3618,6 +3766,26 @@ export const MutasiView: React.FC<MutasiViewProps> = ({
             });
             setTimeout(() => setNotification(null), 4000);
           }}
+        />
+      )}
+
+      {/* Smart Import Modal: Mutasi Masuk (10 Kolom) - Khusus Admin */}
+      {isAdmin && (
+        <MutasiMasukImportModal
+          isOpen={isImportMasukModalOpen}
+          onClose={() => setIsImportMasukModalOpen(false)}
+          currentList={mutasiMasukList}
+          onApplyImport={handleApplyImportMasuk}
+        />
+      )}
+
+      {/* Smart Import Modal: Mutasi Keluar (14 Kolom) - Khusus Admin */}
+      {isAdmin && (
+        <MutasiKeluarImportModal
+          isOpen={isImportKeluarModalOpen}
+          onClose={() => setIsImportKeluarModalOpen(false)}
+          currentList={mutasiKeluarList}
+          onApplyImport={handleApplyImportKeluar}
         />
       )}
     </div>

@@ -36,6 +36,7 @@ import { SyncSuccessModal, SavedDetailItem } from './SyncSuccessModal';
 import { DuplicateWarningModal } from './DuplicateWarningModal';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { TelegramConfigModal } from './TelegramConfigModal';
+import { GTKKGBImportModal } from './GTKKGBImportModal';
 import { isUserRole, isOwnerOfRecord } from '../utils/authUtils';
 import { notifyKGBBaru, getTelegramConfig } from '../services/telegramService';
 
@@ -123,6 +124,7 @@ export const GTKKGBView: React.FC<GTKKGBViewProps> = ({
 
   // Telegram Bot Notification State
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>({
     botToken: '',
     chatId: '',
@@ -136,6 +138,36 @@ export const GTKKGBView: React.FC<GTKKGBViewProps> = ({
   useEffect(() => {
     getTelegramConfig().then(setTelegramConfig).catch(() => {});
   }, []);
+
+  // Handler Terapkan Smart Impor KGB
+  const handleApplyImportKGB = async (
+    finalList: RiwayatKGB[],
+    mode: 'merge' | 'replace',
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number }
+  ) => {
+    setRiwayatList(finalList);
+    safeSetItem(STORAGE_KEY, finalList);
+
+    setSuccessModalData({
+      isOpen: true,
+      title: 'Smart Impor KGB Berhasil!',
+      subtitle: `Berhasil mengimpor data KGB (${stats.matchingCount} diperbarui, ${stats.newCount} baru, total ${stats.finalTotal} riwayat).`,
+      actionType: 'syncAll',
+      dataDetails: [
+        { label: 'Metode Impor', value: mode === 'replace' ? 'Ganti Semua (Replace)' : 'Smart Merge' },
+        { label: 'Data Diperbarui', value: `${stats.matchingCount} GTK` },
+        { label: 'Data Baru', value: `${stats.newCount} GTK` },
+        { label: 'Total Riwayat', value: `${stats.finalTotal} Berkas` }
+      ],
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    });
+
+    if (appConfig.webAppUrl) {
+      syncAllKGBDirectly(appConfig.webAppUrl, finalList, mode).catch((err) => {
+        console.warn('Sync KGB background error:', err);
+      });
+    }
+  };
 
   // Save to safe storage
   useEffect(() => {
@@ -1391,6 +1423,18 @@ export const GTKKGBView: React.FC<GTKKGBViewProps> = ({
 
             {/* Action Buttons */}
             <div className={`flex flex-wrap items-center gap-2 ${isUser ? 'ml-auto' : ''}`}>
+              {!isUser && (
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-gradient-to-r from-teal-600 via-cyan-600 to-blue-600 hover:from-teal-700 hover:to-cyan-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all shrink-0 cursor-pointer"
+                  title="Smart Impor Excel KGB (sheet: kgb)"
+                >
+                  <Sparkles className="w-4 h-4 text-teal-200" />
+                  <span>Smart Impor</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -1659,6 +1703,14 @@ export const GTKKGBView: React.FC<GTKKGBViewProps> = ({
           onConfigSaved={(cfg) => setTelegramConfig(cfg)}
         />
       )}
+
+      {/* Smart Import Modal KGB */}
+      <GTKKGBImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        currentRiwayatList={riwayatList}
+        onApplyImport={handleApplyImportKGB}
+      />
     </div>
   );
 };

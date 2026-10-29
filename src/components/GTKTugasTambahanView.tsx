@@ -29,6 +29,9 @@ import {
   normalizeRawTugasString,
   classifyTugasCategory
 } from '../utils/tugasTambahanUtils';
+import { TugasTambahanImportModal } from './TugasTambahanImportModal';
+import { syncAllGTKDirectly, syncAllPTKDirectly } from '../services/sheetsSync';
+import { safeSetItem } from '../utils/storage';
 
 interface GTKTugasTambahanViewProps {
   gtkList?: GTKData[];
@@ -38,6 +41,7 @@ interface GTKTugasTambahanViewProps {
   appConfig?: AppConfig;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  onImportGTK?: (newList: GTKData[]) => void;
 }
 
 interface ParsedTugasItem {
@@ -74,8 +78,10 @@ export const GTKTugasTambahanView: React.FC<GTKTugasTambahanViewProps> = ({
   waliKelasList = [],
   currentUser,
   theme = 'aurora-glass',
+  appConfig,
   onRefresh,
-  isRefreshing = false
+  isRefreshing = false,
+  onImportGTK
 }) => {
   const isGlass = theme === 'aurora-glass';
   const isUser = isUserRole(currentUser);
@@ -88,6 +94,40 @@ export const GTKTugasTambahanView: React.FC<GTKTugasTambahanViewProps> = ({
   const [isOpenGtk, setIsOpenGtk] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [selectedDetailGTK, setSelectedDetailGTK] = useState<EnrichedGTKTugas | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
+
+  const showNotification = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3500);
+  };
+
+  const handleApplyImportTugas = async (
+    finalList: GTKData[],
+    mode: 'merge' | 'replace',
+    stats: { matchingCount: number; newCount: number; retainedCount: number; finalTotal: number },
+    rawPtkRows?: any[]
+  ) => {
+    safeSetItem('dapodik_cached_gtk', finalList);
+    if (onImportGTK) {
+      onImportGTK(finalList);
+    }
+    showNotification(
+      mode === 'merge'
+        ? `Smart Impor berhasil! ${stats.matchingCount} data PTK & tugas tambahan diperbarui, ${stats.newCount} PTK baru ditambahkan.`
+        : `Impor Ganti Semua berhasil! Total ${finalList.length} data PTK tersimpan.`
+    );
+    if (appConfig?.webAppUrl) {
+      try {
+        const payloadItems = rawPtkRows && rawPtkRows.length > 0 ? rawPtkRows : finalList;
+        await syncAllPTKDirectly(appConfig.webAppUrl, payloadItems, mode);
+        // Sinkronkan juga ringkasan tugasTambahan dan jamTugasTambahan ke sheet gtk
+        await syncAllGTKDirectly(appConfig.webAppUrl, finalList, mode).catch(() => {});
+      } catch (err) {
+        console.warn('Sync PTK tugas tambahan ke Google Sheets:', err);
+      }
+    }
+  };
 
   const tugasRef = useRef<HTMLDivElement>(null);
   const gtkRef = useRef<HTMLDivElement>(null);
@@ -501,6 +541,18 @@ export const GTKTugasTambahanView: React.FC<GTKTugasTambahanViewProps> = ({
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 flex-wrap">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Smart Impor data tugas tambahan dari Excel"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                <span>Smart Impor</span>
+              </button>
+            )}
+
             <button
               onClick={handleExportExcel}
               className="px-3.5 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
@@ -1057,6 +1109,22 @@ export const GTKTugasTambahanView: React.FC<GTKTugasTambahanViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Toast Notification */}
+      {notification && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-5">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span className="text-sm font-medium">{notification}</span>
+        </div>
+      )}
+
+      {/* Smart Import Modal Tugas Tambahan */}
+      <TugasTambahanImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        currentGtkList={gtkList}
+        onApplyImport={handleApplyImportTugas}
+      />
     </div>
   );
 };

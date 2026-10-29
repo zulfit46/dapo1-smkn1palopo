@@ -1,5 +1,5 @@
 {
-  "name": "Data Siswa",
+  "name": "SIM Dapodik",
   "description": "Aplikasi pengelolaan data siswa terintegrasi Google Sheets dengan biodata peserta didik, registrasi, data periodik, presensi, dan panel script code.gs.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
