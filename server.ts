@@ -2454,22 +2454,30 @@ async function startServer() {
     });
   });
 
-  // Kuota & Target Sasaran Usulan PIP (default 50 siswa, kelas 10, 11, 12)
+  // Kuota, Target Sasaran, Status Aktif & Tab Access Usulan PIP & Desil
   let cachedPIPKuota = 50;
   let cachedPIPTargetSasaran: string[] = ['10', '11', '12'];
+  let cachedPIPAktif = true;
+  let cachedDesilAktif = true;
+  let cachedPIPUserTabAccess: 'both' | 'usulan' | 'desil' = 'both';
 
-  // GET Kuota & Target Sasaran Usulan PIP
+  // GET Kuota, Status Aktif & Pengaturan Akses Tab PIP
   app.get("/api/pip/kuota", (req, res) => {
     res.json({ 
       status: "success", 
       kuota: cachedPIPKuota,
-      targetSasaran: cachedPIPTargetSasaran
+      targetSasaran: cachedPIPTargetSasaran,
+      aktif: cachedPIPAktif,
+      isPipAktif: cachedPIPAktif,
+      isDesilAktif: cachedDesilAktif,
+      desilAktif: cachedDesilAktif,
+      userTabAccess: cachedPIPUserTabAccess
     });
   });
 
-  // POST Update Kuota & Target Sasaran Usulan PIP
+  // POST Update Kuota, Status Aktif & Pengaturan Akses Tab PIP
   app.post("/api/pip/kuota", (req, res) => {
-    const { kuota, targetSasaran } = req.body;
+    const { kuota, targetSasaran, aktif, isPipAktif, desilAktif, isDesilAktif, userTabAccess } = req.body;
     let changed = false;
 
     if (typeof kuota === 'number' && kuota >= 0) {
@@ -2486,16 +2494,42 @@ async function startServer() {
       }
     }
 
+    if (typeof aktif === 'boolean') {
+      cachedPIPAktif = aktif;
+      changed = true;
+    } else if (typeof isPipAktif === 'boolean') {
+      cachedPIPAktif = isPipAktif;
+      changed = true;
+    }
+
+    if (typeof isDesilAktif === 'boolean') {
+      cachedDesilAktif = isDesilAktif;
+      changed = true;
+    } else if (typeof desilAktif === 'boolean') {
+      cachedDesilAktif = desilAktif;
+      changed = true;
+    }
+
+    if (userTabAccess === 'both' || userTabAccess === 'usulan' || userTabAccess === 'desil') {
+      cachedPIPUserTabAccess = userTabAccess;
+      changed = true;
+    }
+
     if (changed) {
       return res.json({ 
         status: "success", 
         kuota: cachedPIPKuota, 
         targetSasaran: cachedPIPTargetSasaran,
+        aktif: cachedPIPAktif,
+        isPipAktif: cachedPIPAktif,
+        isDesilAktif: cachedDesilAktif,
+        desilAktif: cachedDesilAktif,
+        userTabAccess: cachedPIPUserTabAccess,
         message: `Pengaturan PIP berhasil diperbarui` 
       });
     }
 
-    res.status(400).json({ status: "error", message: "Data kuota atau target sasaran tidak valid" });
+    res.status(400).json({ status: "error", message: "Data pengaturan tidak valid" });
   });
 
   // POST Update Alasan Layak & Status PIP
