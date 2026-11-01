@@ -27,7 +27,10 @@ import {
   Lock, 
   Power, 
   PowerOff,
-  Sparkles
+  Sparkles,
+  Eye,
+  EyeOff,
+  Layers
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -101,7 +104,35 @@ export const PIPView: React.FC<PIPViewProps> = ({
   const isWaliKelasOnly = !isAdmin && Boolean(userWaliKelas);
   const assignedKelas = userWaliKelas?.kelas ? cleanClass(userWaliKelas.kelas) : '';
 
-  const [activePipSubTab, setActivePipSubTab] = useState<'usulan' | 'desil'>('usulan');
+  // Pengaturan Tab yang Tampil di Akun User/Wali Kelas ('both' | 'usulan' | 'desil')
+  const [userTabAccess, setUserTabAccess] = useState<'both' | 'usulan' | 'desil'>(() => {
+    return safeGetItem<'both' | 'usulan' | 'desil'>('dapodik_pip_user_tab_access', 'both');
+  });
+
+  // Status Aktif/Nonaktif Keterangan Desil (Tab 2)
+  const [isDesilAktif, setIsDesilAktif] = useState<boolean>(() => {
+    return safeGetItem<boolean>('dapodik_desil_aktif', true);
+  });
+
+  const [activePipSubTab, setActivePipSubTab] = useState<'usulan' | 'desil'>(() => {
+    if (!isAdmin) {
+      const access = safeGetItem<'both' | 'usulan' | 'desil'>('dapodik_pip_user_tab_access', 'both');
+      if (access === 'desil') return 'desil';
+      return 'usulan';
+    }
+    return 'usulan';
+  });
+
+  // Otomatis arahkan tab jika akun user/wali kelas hanya memiliki akses ke 1 tab tertentu
+  useEffect(() => {
+    if (!isAdmin) {
+      if (userTabAccess === 'usulan' && activePipSubTab !== 'usulan') {
+        setActivePipSubTab('usulan');
+      } else if (userTabAccess === 'desil' && activePipSubTab !== 'desil') {
+        setActivePipSubTab('desil');
+      }
+    }
+  }, [isAdmin, userTabAccess, activePipSubTab]);
 
   const [pipList, setPipList] = useState<PIPData[]>(() => {
     return safeGetItem<PIPData[]>(LOCAL_STORAGE_PIP_KEY, []);
@@ -124,7 +155,7 @@ export const PIPView: React.FC<PIPViewProps> = ({
   // State Modal Smart Impor PIP (Khusus Admin)
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
-  // Status Aktif/Nonaktif Usulan PIP
+  // Status Aktif/Nonaktif Usulan PIP (Tab 1)
   const [isPipAktif, setIsPipAktif] = useState<boolean>(() => {
     const saved = safeGetItem<boolean>('dapodik_pip_aktif', true);
     return saved;
@@ -143,7 +174,7 @@ export const PIPView: React.FC<PIPViewProps> = ({
   const [tempTargetSasaran, setTempTargetSasaran] = useState<string[]>(['10', '11', '12']);
   const [filterOnlyTarget, setFilterOnlyTarget] = useState<boolean>(true);
 
-  // Ambil kuota, target sasaran, dan status aktif dari server saat komponen dimuat
+  // Ambil kuota, target sasaran, status aktif, dan akses tab user dari server saat komponen dimuat
   useEffect(() => {
     fetch('/api/pip/kuota')
       .then(res => res.json())
@@ -156,34 +187,87 @@ export const PIPView: React.FC<PIPViewProps> = ({
           setTargetSasaran(data.targetSasaran);
           safeSetItem('dapodik_pip_target_sasaran', data.targetSasaran);
         }
-        if (data && typeof data.aktif === 'boolean') {
-          setIsPipAktif(data.aktif);
-          safeSetItem('dapodik_pip_aktif', data.aktif);
+        if (typeof data.aktif === 'boolean' || typeof data.isPipAktif === 'boolean') {
+          const pipStatus = typeof data.isPipAktif === 'boolean' ? data.isPipAktif : data.aktif;
+          setIsPipAktif(pipStatus);
+          safeSetItem('dapodik_pip_aktif', pipStatus);
+        }
+        if (typeof data.isDesilAktif === 'boolean' || typeof data.desilAktif === 'boolean') {
+          const desilStatus = typeof data.isDesilAktif === 'boolean' ? data.isDesilAktif : data.desilAktif;
+          setIsDesilAktif(desilStatus);
+          safeSetItem('dapodik_desil_aktif', desilStatus);
+        }
+        if (data.userTabAccess === 'both' || data.userTabAccess === 'usulan' || data.userTabAccess === 'desil') {
+          setUserTabAccess(data.userTabAccess);
+          safeSetItem('dapodik_pip_user_tab_access', data.userTabAccess);
         }
       })
       .catch(() => {});
   }, []);
 
-  // Toggle status aktif/nonaktif usulan PIP
+  // Toggle status aktif/nonaktif usulan PIP (Tab 1)
   const handleTogglePipAktif = async () => {
     const newStatus = !isPipAktif;
     setIsPipAktif(newStatus);
     safeSetItem('dapodik_pip_aktif', newStatus);
     
     if (newStatus) {
-      showToast('Usulan PIP telah diaktifkan.');
+      showToast('Usulan PIP (Tab 1) telah diaktifkan.');
     } else {
-      showToast('Usulan PIP telah dinonaktifkan.');
+      showToast('Usulan PIP (Tab 1) telah dinonaktifkan.');
     }
 
     try {
       await fetch('/api/pip/kuota', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aktif: newStatus })
+        body: JSON.stringify({ isPipAktif: newStatus, aktif: newStatus })
       });
     } catch (err) {
       console.warn('Gagal menyimpan status ke server:', err);
+    }
+  };
+
+  // Toggle status aktif/nonaktif Keterangan Desil (Tab 2)
+  const handleToggleDesilAktif = async (targetStatus?: boolean) => {
+    const newStatus = targetStatus !== undefined ? targetStatus : !isDesilAktif;
+    setIsDesilAktif(newStatus);
+    safeSetItem('dapodik_desil_aktif', newStatus);
+
+    if (newStatus) {
+      showToast('Keterangan Desil & PIP (Tab 2) telah DIAKTIFKAN. Perubahan data dapat dilakukan.');
+    } else {
+      showToast('Keterangan Desil & PIP (Tab 2) telah DINONAKTIFKAN. Perubahan data dikunci.');
+    }
+
+    try {
+      await fetch('/api/pip/kuota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isDesilAktif: newStatus, desilAktif: newStatus })
+      });
+    } catch (err) {
+      console.warn('Gagal menyimpan status desil ke server:', err);
+    }
+  };
+
+  // Ubah Pengaturan Tab yang Tampil di Akun User/Wali Kelas (Khusus Admin)
+  const handleSetUserTabAccess = async (access: 'both' | 'usulan' | 'desil') => {
+    setUserTabAccess(access);
+    safeSetItem('dapodik_pip_user_tab_access', access);
+    const label = access === 'both' 
+      ? 'Tab 1 (Usulan PIP) & Tab 2 (Ket. Desil)' 
+      : (access === 'usulan' ? 'Hanya Tab 1 (Usulan PIP)' : 'Hanya Tab 2 (Ket. Desil & PIP)');
+    showToast(`Pengaturan Akses Tab User: ${label}`);
+
+    try {
+      await fetch('/api/pip/kuota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userTabAccess: access })
+      });
+    } catch (err) {
+      console.warn('Gagal menyimpan akses tab user ke server:', err);
     }
   };
 
@@ -755,34 +839,101 @@ export const PIPView: React.FC<PIPViewProps> = ({
       )}
 
       {/* Sub-tab Navigation: Usulan PIP vs Ket. Desil */}
-      <div className="flex items-center gap-1.5 p-1 bg-slate-200/80 rounded-2xl w-fit border border-slate-300/60 shadow-xs">
-        <button
-          type="button"
-          onClick={() => setActivePipSubTab('usulan')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activePipSubTab === 'usulan'
-              ? 'bg-white text-indigo-700 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <GraduationCap className="w-4 h-4 text-indigo-600" />
-          <span>Usulan PIP</span>
-          <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-            {totalTerusul}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActivePipSubTab('desil')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activePipSubTab === 'desil'
-              ? 'bg-white text-indigo-700 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-amber-500" />
-          <span>Ket. Desil</span>
-        </button>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-200/80 rounded-2xl w-fit border border-slate-300/60 shadow-xs">
+          {/* Tab 1: Usulan PIP */}
+          {(isAdmin || userTabAccess === 'both' || userTabAccess === 'usulan') && (
+            <button
+              type="button"
+              onClick={() => setActivePipSubTab('usulan')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activePipSubTab === 'usulan'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <GraduationCap className="w-4 h-4 text-indigo-600" />
+              <span>Usulan PIP</span>
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                {totalTerusul}
+              </span>
+              {!isPipAktif && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-0.5">
+                  <PowerOff className="w-2.5 h-2.5" /> Tutup
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Tab 2: Ket. Desil */}
+          {(isAdmin || userTabAccess === 'both' || userTabAccess === 'desil') && (
+            <button
+              type="button"
+              onClick={() => setActivePipSubTab('desil')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activePipSubTab === 'desil'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span>Ket. Desil</span>
+              {!isDesilAktif && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-0.5">
+                  <Lock className="w-2.5 h-2.5" /> Terkunci
+                </span>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* Khusus Admin: Kontrol Pengaturan Tab yang Tampil di Akun User/Wali Kelas */}
+        {isAdmin && (
+          <div className="flex items-center gap-2 p-1.5 bg-white rounded-2xl border border-slate-200 shadow-xs flex-wrap">
+            <div className="flex items-center gap-1.5 pl-2 text-[11px] font-bold text-slate-600 shrink-0">
+              <Eye className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Tab Akun User/Wali:</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleSetUserTabAccess('both')}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  userTabAccess === 'both'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+                title="Akun User / Wali Kelas dapat melihat Tab 1 dan Tab 2"
+              >
+                Tab 1 & 2
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetUserTabAccess('usulan')}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  userTabAccess === 'usulan'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+                title="Akun User / Wali Kelas hanya dapat melihat Tab 1 (Usulan PIP)"
+              >
+                Hanya Tab 1
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetUserTabAccess('desil')}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  userTabAccess === 'desil'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+                title="Akun User / Wali Kelas hanya dapat melihat Tab 2 (Ket. Desil & PIP)"
+              >
+                Hanya Tab 2
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {activePipSubTab === 'desil' ? (
@@ -792,6 +943,8 @@ export const PIPView: React.FC<PIPViewProps> = ({
           currentUser={currentUser}
           waliKelasList={waliKelasList}
           showToast={showToast}
+          isDesilAktif={isDesilAktif}
+          onToggleDesilAktif={handleToggleDesilAktif}
         />
       ) : (
         <>
