@@ -20,7 +20,11 @@ import {
   CheckCircle2,
   Info,
   UserCheck,
-  FileCode
+  FileCode,
+  Lock,
+  Unlock,
+  Power,
+  PowerOff
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { CodeGsModal } from './CodeGsModal';
@@ -31,6 +35,8 @@ interface KetDesilTabProps {
   currentUser?: GTKData | null;
   waliKelasList?: WaliKelas[];
   showToast?: (message: string) => void;
+  isDesilAktif?: boolean;
+  onToggleDesilAktif?: (newStatus?: boolean) => void;
 }
 
 // Helper normalisasi nama rombel/kelas
@@ -150,9 +156,40 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
   appConfig,
   currentUser,
   waliKelasList = [],
-  showToast
+  showToast,
+  isDesilAktif: isDesilAktifProp,
+  onToggleDesilAktif: onToggleDesilAktifProp
 }) => {
   const isAdmin = !currentUser || !isUserRole(currentUser) || isAdminRole(currentUser);
+
+  // Status Aktif/Nonaktif Keterangan Desil (Tab 2)
+  const [localDesilAktif, setLocalDesilAktif] = useState<boolean>(() => {
+    return safeGetItem<boolean>('dapodik_desil_aktif', true);
+  });
+
+  useEffect(() => {
+    if (isDesilAktifProp !== undefined) {
+      setLocalDesilAktif(isDesilAktifProp);
+    }
+  }, [isDesilAktifProp]);
+
+  const effectiveDesilAktif = isDesilAktifProp !== undefined ? isDesilAktifProp : localDesilAktif;
+
+  const handleToggleDesilAktif = (targetVal?: boolean) => {
+    const nextVal = targetVal !== undefined ? targetVal : !effectiveDesilAktif;
+    setLocalDesilAktif(nextVal);
+    safeSetItem('dapodik_desil_aktif', nextVal);
+    if (onToggleDesilAktifProp) {
+      onToggleDesilAktifProp(nextVal);
+    } else {
+      triggerToast(nextVal ? 'Keterangan Desil & PIP (Tab 2) telah diaktifkan.' : 'Keterangan Desil & PIP (Tab 2) telah dinonaktifkan.');
+      fetch('/api/pip/kuota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isDesilAktif: nextVal })
+      }).catch(() => {});
+    }
+  };
 
   // Deteksi penugasan wali kelas pengguna yang sedang login
   const userWaliKelas = useMemo(() => {
@@ -465,6 +502,11 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
 
   // Handler Perubahan Desil
   const handleDesilSelect = async (nisn: string, studentName: string, newDesil: string) => {
+    if (!effectiveDesilAktif) {
+      triggerToast('⚠️ Perubahan data Keterangan Desil saat ini dinonaktifkan oleh Admin.');
+      return;
+    }
+
     const cleanId = String(nisn).trim();
     setSavingNisn(cleanId);
 
@@ -496,6 +538,11 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
 
   // Handler Perubahan Keterangan PIP (sudah dapat PIP / Belum Dapat PIP)
   const handleKetPipSelect = async (nisn: string, studentName: string, newKetPip: string) => {
+    if (!effectiveDesilAktif) {
+      triggerToast('⚠️ Perubahan data Keterangan PIP saat ini dinonaktifkan oleh Admin.');
+      return;
+    }
+
     const cleanId = String(nisn).trim();
     setSavingNisn(cleanId);
 
@@ -559,6 +606,12 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
 
   // Handler Baca File Impor Excel / CSV
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!effectiveDesilAktif) {
+      alert('Perubahan data pada Tab Keterangan Desil & PIP saat ini dinonaktifkan oleh Admin. Aktifkan tab terlebih dahulu untuk melakukan impor.');
+      e.target.value = '';
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -838,13 +891,16 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
 
           {/* Smart Impor Desil (Khusus Admin) */}
           {isAdmin && (
-            <label className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer shadow-xs transition-all">
+            <label className={`flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold shadow-xs transition-all ${
+              !effectiveDesilAktif ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer'
+            }`}>
               <Upload className="w-3.5 h-3.5 text-indigo-600" />
               <span>Smart Impor</span>
               <input
                 type="file"
                 accept=".xlsx,.xls,.csv"
                 onChange={handleFileUpload}
+                disabled={!effectiveDesilAktif}
                 className="hidden"
               />
             </label>
@@ -858,8 +914,65 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
             <Download className="w-3.5 h-3.5" />
             <span>Unduh Excel</span>
           </button>
+
+          {/* Tombol Aktif/Nonaktif Tab 2 (Khusus Admin) */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => handleToggleDesilAktif()}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
+                effectiveDesilAktif
+                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-rose-200'
+              }`}
+              title={effectiveDesilAktif ? 'Klik untuk menonaktifkan perubahan data pada Tab 2' : 'Klik untuk mengaktifkan perubahan data pada Tab 2'}
+            >
+              {effectiveDesilAktif ? (
+                <>
+                  <Power className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Tab 2: Aktif</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-white" />
+                  <span>Tab 2: Terkunci (Nonaktif)</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Banner Status Nonaktif Tab 2 */}
+      {!effectiveDesilAktif && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center shrink-0 text-rose-600">
+              <Lock className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-bold flex items-center gap-2 text-sm text-rose-900">
+                <span>Perubahan Data Tab 2 Dinonaktifkan</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-600 text-white uppercase">
+                  Terkunci
+                </span>
+              </div>
+              <p className="text-rose-700 mt-0.5">
+                Admin telah menyetel status Tab 2 ke <strong>Nonaktif</strong>. Semua perubahan data (Keterangan Desil, Ket. PIP, dan Smart Impor) saat ini dikunci.
+              </p>
+            </div>
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => handleToggleDesilAktif(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 self-end sm:self-center transition-all"
+            >
+              <Power className="w-3.5 h-3.5" />
+              <span>Buka Kunci / Aktifkan</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Ringkasan Status Desil & PIP */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
@@ -955,12 +1068,15 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
                           <select
                             value={item.desil || ''}
                             onChange={(e) => handleDesilSelect(item.nisn, item.nama, e.target.value)}
-                            disabled={isCurrentSaving}
-                            className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
+                            disabled={isCurrentSaving || !effectiveDesilAktif}
+                            title={!effectiveDesilAktif ? 'Perubahan data dinonaktifkan oleh Admin' : undefined}
+                            className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
                               item.desil 
                                 ? getDesilBadgeColor(item.desil)
                                 : 'bg-white border-slate-300 text-slate-500'
-                            } ${isCurrentSaving ? 'opacity-50 cursor-wait' : ''}`}
+                            } ${isCurrentSaving ? 'opacity-50 cursor-wait' : ''} ${
+                              !effectiveDesilAktif ? 'opacity-60 cursor-not-allowed bg-slate-100 text-slate-400' : 'cursor-pointer'
+                            }`}
                           >
                             <option value="" className="bg-white text-slate-400 font-normal">
                               - Belum Dipilih -
@@ -984,10 +1100,13 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
                         <select
                           value={item.ket_pip || ''}
                           onChange={(e) => handleKetPipSelect(item.nisn, item.nama, e.target.value)}
-                          disabled={isCurrentSaving}
-                          className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
+                          disabled={isCurrentSaving || !effectiveDesilAktif}
+                          title={!effectiveDesilAktif ? 'Perubahan data dinonaktifkan oleh Admin' : undefined}
+                          className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all focus:outline-hidden focus:ring-2 focus:ring-indigo-500 ${
                             getKetPipBadgeColor(item.ket_pip)
-                          } ${isCurrentSaving ? 'opacity-50 cursor-wait' : ''}`}
+                          } ${isCurrentSaving ? 'opacity-50 cursor-wait' : ''} ${
+                            !effectiveDesilAktif ? 'opacity-60 cursor-not-allowed bg-slate-100 text-slate-400' : 'cursor-pointer'
+                          }`}
                         >
                           <option value="" className="bg-white text-slate-400 font-normal">
                             - Belum Dipilih -
