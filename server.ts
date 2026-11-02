@@ -42,6 +42,22 @@ try {
   console.warn('Failed to load gtk_download_headers.json:', e);
 }
 
+// Persistent Student Status Filter for User/Wali Kelas (aktif | tidak_aktif | semua)
+const STUDENT_STATUS_FILTER_FILE = path.join(process.cwd(), 'student_status_filter.json');
+let cachedUserStudentStatusFilter: 'aktif' | 'tidak_aktif' | 'semua' = 'semua';
+try {
+  if (fs.existsSync(STUDENT_STATUS_FILTER_FILE)) {
+    const raw = fs.readFileSync(STUDENT_STATUS_FILTER_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed && (parsed.filter === 'aktif' || parsed.filter === 'tidak_aktif' || parsed.filter === 'semua')) {
+      cachedUserStudentStatusFilter = parsed.filter;
+      console.log(`Loaded student status filter for user: ${cachedUserStudentStatusFilter}`);
+    }
+  }
+} catch (e) {
+  console.warn('Failed to load student_status_filter.json:', e);
+}
+
 // Persistent Telegram Bot Config
 const TELEGRAM_CONFIG_FILE = path.join(process.cwd(), 'telegram_config.json');
 const defaultEnvBotToken = (process.env.TELEGRAM_BOT_TOKEN || process.env.VITE_TELEGRAM_BOT_TOKEN || '').trim();
@@ -261,6 +277,11 @@ async function fetchFromGoogleSheets(): Promise<Student[] | null> {
                   if (hClean === 'vervaloleh' || hClean === 'petugasverval' || hClean === 'petugas' || hClean === 'walikelas' || hClean === 'verifikator') {
                     obj.vervalOleh = strVal;
                     obj.verval_oleh = strVal;
+                  }
+                  if (hClean === 'desil') obj.desil = strVal;
+                  if (hClean === 'ketpip' || hClean === 'ket_pip' || hClean === 'keteranganpip') {
+                    obj.ket_pip = strVal;
+                    obj.ketPip = strVal;
                   }
                 });
 
@@ -562,7 +583,7 @@ async function fetchJurusanFromGoogleSheets(): Promise<Jurusan[]> {
   return fetchJurusanPromise;
 }
 
-// Helper to fetch Desil data from sheet 'desil'
+// Helper to fetch Desil data from sheet 'data' (headers: desil, ket_pip)
 let fetchDesilPromise: Promise<DesilData[]> | null = null;
 
 async function fetchDesilFromGoogleSheets(force: boolean = false): Promise<DesilData[]> {
@@ -574,75 +595,120 @@ async function fetchDesilFromGoogleSheets(force: boolean = false): Promise<Desil
   }
 
   fetchDesilPromise = (async () => {
-    if (appConfig.spreadsheetId) {
-      try {
-        console.log('Fetching Desil via Google Sheets GViz endpoint...');
-        const gvizUrl = `https://docs.google.com/spreadsheets/d/${appConfig.spreadsheetId}/gviz/tq?tqx=out:json&sheet=desil&_t=${Date.now()}`;
-        const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(20000) });
-        if (res.ok) {
-          const text = await res.text();
-          const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
-          if (jsonText) {
-            const parsed = JSON.parse(jsonText);
-            const rawRows = parsed.table?.rows || [];
-            const cols = parsed.table?.cols || [];
-            if (rawRows.length > 0) {
-              let headerRow: string[] = [];
-              let startIdx = 0;
-              const hasColLabels = cols.some((c: any) => c.label && c.label.trim() !== '');
-              if (hasColLabels) {
-                headerRow = cols.map((c: any) => String(c.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-                startIdx = 0;
-              } else {
-                headerRow = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '') || [];
-                startIdx = 1;
-              }
+    // 1. Ambil langsung dari memori studentList jika sudah memuat data siswa dari sheet "data"
+    if (studentList && studentList.length > 0) {
+      const fromStudents: DesilData[] = studentList
+        .filter(s => s.nisn)
+        .map(s => ({
+          nisn: String(s.nisn).trim(),
+          nama: String(s.nama || '').trim(),
+          rombel: String(s.kelas || '').trim(),
+          desil: String(s.desil || '').trim(),
+          ket_pip: String(s.ket_pip || s.ketPip || '').trim()
+        }));
 
-              const nisnIdx = headerRow.indexOf('nisn') >= 0 ? headerRow.indexOf('nisn') : 0;
-              const desilIdx = headerRow.indexOf('desil') >= 0 ? headerRow.indexOf('desil') : 1;
-              const ketPipIdx = headerRow.findIndex(h => h === 'ketpip' || h === 'ket_pip' || h === 'pip' || h === 'keteranganpip');
-
-              const list: DesilData[] = [];
-              for (let i = startIdx; i < rawRows.length; i++) {
-                const row = rawRows[i]?.c;
-                if (!row) continue;
-                const nisn = row[nisnIdx]?.v !== null && row[nisnIdx]?.v !== undefined ? String(row[nisnIdx].f || row[nisnIdx].v).trim() : '';
-                const desil = row[desilIdx]?.v !== null && row[desilIdx]?.v !== undefined ? String(row[desilIdx].f || row[desilIdx].v).trim() : '';
-                const ket_pip = ketPipIdx >= 0 && row[ketPipIdx]?.v !== null && row[ketPipIdx]?.v !== undefined ? String(row[ketPipIdx].f || row[ketPipIdx].v).trim() : '';
-                if (nisn) {
-                  list.push({ nisn, desil, ket_pip });
-                }
-              }
-
-              if (list.length > 0) {
-                cachedDesilList = list;
-                console.log(`Successfully fetched ${list.length} Desil entries from sheet!`);
-                return list;
-              }
-            }
-          }
-        }
-      } catch (err: any) {
-        console.warn('Catatan: Sheet desil belum dapat diakses via GViz, mencoba fallback...', err?.message || err);
+      if (fromStudents.length > 0) {
+        cachedDesilList = fromStudents;
+        console.log(`[Desil] Berhasil memuat ${fromStudents.length} data siswa dari sheet "data" untuk Keterangan Desil & PIP.`);
       }
     }
 
-    // Fallback: Google Apps Script Web App (?sheet=desil)
+    // 2. Fetch dari Google Sheets GViz endpoint sheet "data" untuk sinkronisasi kolom desil & ket_pip terbaru
+    if (appConfig.spreadsheetId) {
+      const candidates = [appConfig.sheetName || 'data', 'data', 'desil'];
+      for (const sheetName of candidates) {
+        try {
+          console.log(`Fetching Desil via Google Sheets GViz endpoint (${sheetName})...`);
+          const gvizUrl = `https://docs.google.com/spreadsheets/d/${appConfig.spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}&_t=${Date.now()}`;
+          const res = await fetch(gvizUrl, { signal: AbortSignal.timeout(20000) });
+          if (res.ok) {
+            const text = await res.text();
+            const jsonText = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+            if (jsonText) {
+              const parsed = JSON.parse(jsonText);
+              const rawRows = parsed.table?.rows || [];
+              const cols = parsed.table?.cols || [];
+              if (rawRows.length > 0) {
+                let headerRow: string[] = [];
+                let startIdx = 0;
+                const hasColLabels = cols.some((c: any) => c.label && c.label.trim() !== '');
+                if (hasColLabels) {
+                  headerRow = cols.map((c: any) => String(c.label || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+                  startIdx = 0;
+                } else {
+                  headerRow = rawRows[0]?.c?.map((cell: any) => cell && cell.v !== null ? String(cell.v).trim().toLowerCase().replace(/[^a-z0-9]/g, '') : '') || [];
+                  startIdx = 1;
+                }
+
+                const nisnIdx = headerRow.indexOf('nisn') >= 0 ? headerRow.indexOf('nisn') : headerRow.findIndex(h => h.includes('nisn'));
+                const desilIdx = headerRow.findIndex(h => h === 'desil');
+                const ketPipIdx = headerRow.findIndex(h => h === 'ketpip' || h === 'ket_pip' || h === 'pip' || h === 'keteranganpip');
+                const namaIdx = headerRow.findIndex(h => h === 'nama' || h === 'namasiswa');
+                const kelasIdx = headerRow.findIndex(h => h === 'kelas' || h === 'rombel');
+
+                if (nisnIdx >= 0 && (desilIdx >= 0 || ketPipIdx >= 0 || sheetName === 'desil')) {
+                  const list: DesilData[] = [];
+                  for (let i = startIdx; i < rawRows.length; i++) {
+                    const row = rawRows[i]?.c;
+                    if (!row) continue;
+                    const nisn = nisnIdx >= 0 && row[nisnIdx]?.v !== null && row[nisnIdx]?.v !== undefined ? String(row[nisnIdx].f || row[nisnIdx].v).trim() : '';
+                    const desil = desilIdx >= 0 && row[desilIdx]?.v !== null && row[desilIdx]?.v !== undefined ? String(row[desilIdx].f || row[desilIdx].v).trim() : '';
+                    const ket_pip = ketPipIdx >= 0 && row[ketPipIdx]?.v !== null && row[ketPipIdx]?.v !== undefined ? String(row[ketPipIdx].f || row[ketPipIdx].v).trim() : '';
+                    const nama = namaIdx >= 0 && row[namaIdx]?.v !== null && row[namaIdx]?.v !== undefined ? String(row[namaIdx].f || row[namaIdx].v).trim() : '';
+                    const rombel = kelasIdx >= 0 && row[kelasIdx]?.v !== null && row[kelasIdx]?.v !== undefined ? String(row[kelasIdx].f || row[kelasIdx].v).trim() : '';
+
+                    if (nisn) {
+                      list.push({ nisn, desil, ket_pip, nama, rombel, rowIndex: i + 1 });
+                    }
+                  }
+
+                  if (list.length > 0) {
+                    // Update juga ke studentList jika dari sheet "data"
+                    if (sheetName === 'data' || sheetName === appConfig.sheetName) {
+                      list.forEach(item => {
+                        const sIdx = studentList.findIndex(s => String(s.nisn).trim() === item.nisn);
+                        if (sIdx >= 0) {
+                          studentList[sIdx].desil = item.desil;
+                          studentList[sIdx].ket_pip = item.ket_pip;
+                          studentList[sIdx].ketPip = item.ket_pip;
+                        }
+                      });
+                    }
+
+                    cachedDesilList = list;
+                    console.log(`[Desil] Berhasil memuat ${list.length} data desil dari sheet '${sheetName}' via GViz!`);
+                    return list;
+                  }
+                }
+              }
+            }
+          }
+        } catch (err: any) {
+          console.warn(`Catatan: Sheet '${sheetName}' belum dapat diakses via GViz:`, err?.message || err);
+        }
+      }
+    }
+
+    // 3. Fallback: Google Apps Script Web App (?sheet=data)
     if (appConfig.webAppUrl) {
       try {
-        const url = appConfig.webAppUrl + (appConfig.webAppUrl.includes('?') ? '&' : '?') + 'sheet=desil&target=desil&_t=' + Date.now();
-        const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+        const url = appConfig.webAppUrl + (appConfig.webAppUrl.includes('?') ? '&' : '?') + 'sheet=data&target=data&_t=' + Date.now();
+        const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
         if (res.ok) {
           const json = await res.json();
           if (json && json.status === 'success' && Array.isArray(json.data) && json.data.length > 0) {
             const list: DesilData[] = json.data.map((item: any) => ({
               nisn: String(item.nisn || item.NISN || '').trim(),
+              nama: String(item.nama || item.Nama || '').trim(),
+              rombel: String(item.kelas || item.rombel || item.Rombel || '').trim(),
               desil: String(item.desil || item.Desil || '').trim(),
               ket_pip: String(item.ket_pip || item.ketPip || item.Ket_PIP || item.ket_PIP || '').trim()
             })).filter((d: DesilData) => Boolean(d.nisn));
 
-            cachedDesilList = list;
-            return list;
+            if (list.length > 0) {
+              cachedDesilList = list;
+              return list;
+            }
           }
         }
       } catch {}
@@ -2532,6 +2598,34 @@ async function startServer() {
     res.status(400).json({ status: "error", message: "Data pengaturan tidak valid" });
   });
 
+  // GET Student Status Filter Setting for User/Wali Kelas
+  app.get("/api/config/student-filter", (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.json({
+      status: "success",
+      filter: cachedUserStudentStatusFilter
+    });
+  });
+
+  // POST Update Student Status Filter Setting for User/Wali Kelas
+  app.post("/api/config/student-filter", (req, res) => {
+    const { filter } = req.body;
+    if (filter === 'aktif' || filter === 'tidak_aktif' || filter === 'semua') {
+      cachedUserStudentStatusFilter = filter;
+      try {
+        fs.writeFileSync(STUDENT_STATUS_FILTER_FILE, JSON.stringify({ filter }, null, 2), 'utf-8');
+      } catch (err) {
+        console.warn('Could not write to student_status_filter.json:', err);
+      }
+      return res.json({
+        status: "success",
+        filter: cachedUserStudentStatusFilter,
+        message: "Pengaturan status siswa untuk User/Wali Kelas berhasil diperbarui"
+      });
+    }
+    res.status(400).json({ status: "error", message: "Nilai filter tidak valid. Harus 'aktif', 'tidak_aktif', atau 'semua'." });
+  });
+
   // POST Update Alasan Layak & Status PIP
   app.post("/api/pip", async (req, res) => {
     const { nisn, nama, alasan_layak, status, rowIndex } = req.body;
@@ -3227,7 +3321,7 @@ async function startServer() {
   // POST Single Desil Update
   app.post("/api/desil", async (req, res) => {
     try {
-      const { nisn, desil, ket_pip, ketPip } = req.body;
+      const { nisn, desil, ket_pip, ketPip, webAppUrl } = req.body;
       if (!nisn) {
         return res.status(400).json({ status: "error", message: "NISN wajib diisi" });
       }
@@ -3255,16 +3349,49 @@ async function startServer() {
         cachedDesilList.push({ nisn: cleanNisn, desil: finalDesil, ket_pip: finalKetPip });
       }
 
-      if (appConfig.webAppUrl) {
+      // Sinkronkan ke studentList (sheet "data") dan cachedSheetsData
+      const sIdx = studentList.findIndex(s => String(s.nisn).trim() === cleanNisn);
+      let studentNama = "";
+      let studentNipd = "";
+      if (sIdx >= 0) {
+        studentList[sIdx].desil = finalDesil;
+        studentList[sIdx].ket_pip = finalKetPip;
+        studentList[sIdx].ketPip = finalKetPip;
+        studentNama = studentList[sIdx].nama || "";
+        studentNipd = studentList[sIdx].nipd || "";
+      }
+      if (Array.isArray(cachedSheetsData)) {
+        const csIdx = cachedSheetsData.findIndex((s: any) => String(s.nisn).trim() === cleanNisn);
+        if (csIdx >= 0) {
+          cachedSheetsData[csIdx].desil = finalDesil;
+          cachedSheetsData[csIdx].ket_pip = finalKetPip;
+          cachedSheetsData[csIdx].ketPip = finalKetPip;
+          if (!studentNama) studentNama = cachedSheetsData[csIdx].nama || "";
+          if (!studentNipd) studentNipd = cachedSheetsData[csIdx].nipd || "";
+        }
+      }
+
+      const targetUrl = webAppUrl || appConfig.webAppUrl;
+      if (!appConfig.webAppUrl && webAppUrl) {
+        appConfig.webAppUrl = webAppUrl;
+      }
+
+      let gasSyncMessage = "";
+      if (targetUrl) {
         try {
           const payload = {
             action: "saveDesil",
-            target: "desil",
+            target: "data",
             nisn: cleanNisn,
+            nama: studentNama,
+            nipd: studentNipd,
             desil: finalDesil,
             ket_pip: finalKetPip
           };
-          await sendToGas(appConfig.webAppUrl, payload, 20000);
+          const gasRes = await sendToGas(targetUrl, payload, 25000);
+          if (gasRes?.json?.message) {
+            gasSyncMessage = gasRes.json.message;
+          }
         } catch (gasErr) {
           console.warn("[Desil Save] Penerusan ke GAS gagal, data tetap tersimpan di server:", gasErr);
         }
@@ -3272,7 +3399,7 @@ async function startServer() {
 
       return res.json({
         status: "success",
-        message: "Status desil & ket_pip berhasil diperbarui",
+        message: gasSyncMessage || "Status desil & ket_pip berhasil diperbarui di sheet data",
         data: { nisn: cleanNisn, desil: finalDesil, ket_pip: finalKetPip }
       });
     } catch (err: any) {
@@ -3287,7 +3414,7 @@ async function startServer() {
   // POST Import / Sync All Desil Data
   app.post("/api/desil/import", async (req, res) => {
     try {
-      const { items } = req.body;
+      const { items, webAppUrl } = req.body;
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ status: "error", message: "Data desil tidak boleh kosong" });
       }
@@ -3311,14 +3438,41 @@ async function startServer() {
 
       cachedDesilList = Array.from(map.entries()).map(([nisn, val]) => ({ nisn, desil: val.desil, ket_pip: val.ket_pip }));
 
-      if (appConfig.webAppUrl) {
+      // Sinkronkan ke studentList (sheet "data") dan cachedSheetsData
+      cachedDesilList.forEach(item => {
+        const sIdx = studentList.findIndex(s => String(s.nisn).trim() === item.nisn);
+        if (sIdx >= 0) {
+          studentList[sIdx].desil = item.desil;
+          studentList[sIdx].ket_pip = item.ket_pip;
+          studentList[sIdx].ketPip = item.ket_pip;
+        }
+        if (Array.isArray(cachedSheetsData)) {
+          const csIdx = cachedSheetsData.findIndex((s: any) => String(s.nisn).trim() === item.nisn);
+          if (csIdx >= 0) {
+            cachedSheetsData[csIdx].desil = item.desil;
+            cachedSheetsData[csIdx].ket_pip = item.ket_pip;
+            cachedSheetsData[csIdx].ketPip = item.ket_pip;
+          }
+        }
+      });
+
+      const targetUrl = webAppUrl || appConfig.webAppUrl;
+      if (!appConfig.webAppUrl && webAppUrl) {
+        appConfig.webAppUrl = webAppUrl;
+      }
+
+      let gasSyncMessage = "";
+      if (targetUrl) {
         try {
           const payload = {
             action: "syncAllDesil",
-            target: "desil",
+            target: "data",
             items: cachedDesilList
           };
-          await sendToGas(appConfig.webAppUrl, payload, 30000);
+          const gasRes = await sendToGas(targetUrl, payload, 35000);
+          if (gasRes?.json?.message) {
+            gasSyncMessage = gasRes.json.message;
+          }
         } catch (gasErr) {
           console.warn("[Desil Import] Penerusan ke GAS gagal, data tetap tersimpan di server:", gasErr);
         }
@@ -3326,7 +3480,7 @@ async function startServer() {
 
       return res.json({
         status: "success",
-        message: `Berhasil memperbarui ${cachedDesilList.length} data desil & ket_pip!`,
+        message: gasSyncMessage || `Berhasil memperbarui ${cachedDesilList.length} data desil & ket_pip ke sheet data!`,
         total: cachedDesilList.length,
         list: cachedDesilList
       });
