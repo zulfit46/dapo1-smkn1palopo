@@ -755,25 +755,6 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-indigo-600" /> Keterangan Desil & PIP
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Pilih keterangan desil dan status penerimaan PIP untuk masing-masing peserta didik. Perubahan tersimpan langsung di sheet <strong>"data"</strong> (kolom <code>desil</code> & <code>ket_pip</code>).
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
-              onlyActive 
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                : 'bg-amber-50 text-amber-700 border-amber-200'
-            }`}>
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>{onlyActive ? `Hanya Menampilkan Siswa Aktif (${combinedData.length} siswa)` : `Menampilkan Semua Siswa (${combinedData.length} siswa)`}</span>
-            </span>
-            {isWaliKelasOnly && userWaliKelas && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-semibold shadow-2xs">
-                <Users className="w-3.5 h-3.5" />
-                <span>Wali Kelas: <strong>{userWaliKelas.nama || currentUser?.nama}</strong> &bull; Rombel <strong>{userWaliKelas.kelas}</strong> ({filteredData.length} siswa)</span>
-              </span>
-            )}
-          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
