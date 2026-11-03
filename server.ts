@@ -615,7 +615,7 @@ async function fetchDesilFromGoogleSheets(force: boolean = false): Promise<Desil
 
     // 2. Fetch dari Google Sheets GViz endpoint sheet "data" untuk sinkronisasi kolom desil & ket_pip terbaru
     if (appConfig.spreadsheetId) {
-      const candidates = [appConfig.sheetName || 'data', 'data', 'desil'];
+      const candidates = [appConfig.sheetName || 'data', 'data'];
       for (const sheetName of candidates) {
         try {
           console.log(`Fetching Desil via Google Sheets GViz endpoint (${sheetName})...`);
@@ -646,7 +646,7 @@ async function fetchDesilFromGoogleSheets(force: boolean = false): Promise<Desil
                 const namaIdx = headerRow.findIndex(h => h === 'nama' || h === 'namasiswa');
                 const kelasIdx = headerRow.findIndex(h => h === 'kelas' || h === 'rombel');
 
-                if (nisnIdx >= 0 && (desilIdx >= 0 || ketPipIdx >= 0 || sheetName === 'desil')) {
+                if (nisnIdx >= 0) {
                   const list: DesilData[] = [];
                   for (let i = startIdx; i < rawRows.length; i++) {
                     const row = rawRows[i]?.c;
@@ -3305,8 +3305,9 @@ async function startServer() {
     }
   });
 
-  // GET Desil Data from sheet 'desil'
+  // GET Desil Data directly from sheet 'data'
   app.get("/api/desil", async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     const isForce = req.query.force === 'true';
     if (isForce || cachedDesilList.length === 0) {
       await fetchDesilFromGoogleSheets(isForce);

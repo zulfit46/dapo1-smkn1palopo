@@ -346,21 +346,8 @@ function getPIPSheet() {
 }
 
 function getDesilSheet() {
-  const ss = getSpreadsheet();
-  const allSheets = ss.getSheets();
-  let sheet = allSheets.find(s => {
-    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    return name === "desil" || name === "ketdesil" || name === "keterangandesil";
-  });
-  if (!sheet) {
-    sheet = ss.getSheetByName(SHEET_NAME_DESIL);
-  }
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME_DESIL);
-    sheet.appendRow(DESIL_OFFICIAL_HEADERS);
-    sheet.getRange(1, 1, 1, DESIL_OFFICIAL_HEADERS.length).setFontWeight("bold").setBackground("#e0e7ff");
-  }
-  return sheet;
+  // Keterangan desil & ket_pip kini tersimpan langsung di sheet utama "data"
+  return getStudentSheet();
 }
 
 function getWaliKelasSheet() {
@@ -988,78 +975,42 @@ function doGet(e) {
       });
     }
 
-    // 9. DATA KETERANGAN DESIL (sumber data: sheet "data", fallback ke sheet "desil")
+    // 9. DATA KETERANGAN DESIL (sumber data murni: sheet "data", tidak menggunakan sheet desil)
     if (rawTarget === "desil" || rawTarget === "ket_desil" || rawTarget === "ketdesil") {
-      try {
-        const studentSheetForDesil = getStudentSheet();
-        const studentDataForDesil = studentSheetForDesil.getDataRange().getValues();
-        if (studentDataForDesil.length > 1) {
-          const sHeaders = studentDataForDesil[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-          const sNisnIdx = sHeaders.indexOf("nisn");
-          const sDesilIdx = sHeaders.indexOf("desil");
-          const sKetPipIdx = sHeaders.findIndex(h => h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip");
-          const sNamaIdx = sHeaders.findIndex(h => h === "nama" || h === "namasiswa" || h === "namamurid");
-          const sKelasIdx = sHeaders.findIndex(h => h === "rombel" || h === "kelas");
+      const studentSheetForDesil = getStudentSheet();
+      const studentDataForDesil = studentSheetForDesil.getDataRange().getValues();
+      if (studentDataForDesil.length <= 1) {
+        return responseJSON({ status: "success", target: "data", total: 0, data: [] });
+      }
 
-          if (sNisnIdx >= 0 && (sDesilIdx >= 0 || sKetPipIdx >= 0)) {
-            const desilFromData = [];
-            for (let r = 1; r < studentDataForDesil.length; r++) {
-              const row = studentDataForDesil[r];
-              const rNisn = String(row[sNisnIdx] || '').trim();
-              if (rNisn) {
-                desilFromData.push({
-                  rowIndex: r + 1,
-                  nisn: rNisn,
-                  nama: sNamaIdx >= 0 ? String(row[sNamaIdx] || '').trim() : '',
-                  rombel: sKelasIdx >= 0 ? String(row[sKelasIdx] || '').trim() : '',
-                  desil: sDesilIdx >= 0 ? String(row[sDesilIdx] || '').trim() : '',
-                  ket_pip: sKetPipIdx >= 0 ? String(row[sKetPipIdx] || '').trim() : ''
-                });
-              }
-            }
-            if (desilFromData.length > 0) {
-              return responseJSON({
-                status: "success",
-                target: "data",
-                total: desilFromData.length,
-                data: desilFromData,
-                timestamp: new Date().toISOString()
-              });
-            }
-          }
+      const sHeaders = studentDataForDesil[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const sNisnIdx = sHeaders.indexOf("nisn");
+      const sDesilIdx = sHeaders.indexOf("desil");
+      const sKetPipIdx = sHeaders.findIndex(h => h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip");
+      const sNamaIdx = sHeaders.findIndex(h => h === "nama" || h === "namasiswa" || h === "namamurid");
+      const sKelasIdx = sHeaders.findIndex(h => h === "rombel" || h === "kelas");
+
+      const desilFromData = [];
+      for (let r = 1; r < studentDataForDesil.length; r++) {
+        const row = studentDataForDesil[r];
+        const rNisn = sNisnIdx >= 0 ? String(row[sNisnIdx] || '').trim() : '';
+        if (rNisn) {
+          desilFromData.push({
+            rowIndex: r + 1,
+            nisn: rNisn,
+            nama: sNamaIdx >= 0 ? String(row[sNamaIdx] || '').trim() : '',
+            rombel: sKelasIdx >= 0 ? String(row[sKelasIdx] || '').trim() : '',
+            desil: sDesilIdx >= 0 ? String(row[sDesilIdx] || '').trim() : '',
+            ket_pip: sKetPipIdx >= 0 ? String(row[sKetPipIdx] || '').trim() : ''
+          });
         }
-      } catch (errDesilFromData) {
-        Logger.log("Info read desil from data: " + errDesilFromData.message);
       }
-
-      // Fallback ke sheet "desil" jika sheet data belum terdapat kolom desil
-      const dslSheet = getDesilSheet();
-      const dslData = dslSheet.getDataRange().getValues();
-      if (dslData.length <= 1) {
-        return responseJSON({ status: "success", target: "desil", total: 0, data: [] });
-      }
-      const dslHeaders = dslData[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-      const nisnIdx = dslHeaders.indexOf("nisn");
-      const desilIdx = dslHeaders.indexOf("desil");
-      const ketPipIdx = dslHeaders.findIndex(h => h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip");
-      const dslRows = dslData.slice(1);
-      const desilList = dslRows.map((row, index) => {
-        const rNisn = nisnIdx >= 0 ? String(row[nisnIdx] || '').trim() : '';
-        const rDesil = desilIdx >= 0 ? String(row[desilIdx] || '').trim() : '';
-        const rKetPip = ketPipIdx >= 0 ? String(row[ketPipIdx] || '').trim() : '';
-        return {
-          rowIndex: index + 2,
-          nisn: rNisn,
-          desil: rDesil,
-          ket_pip: rKetPip
-        };
-      }).filter(item => Boolean(item.nisn));
 
       return responseJSON({
         status: "success",
-        target: "desil",
-        total: desilList.length,
-        data: desilList,
+        target: "data",
+        total: desilFromData.length,
+        data: desilFromData,
         timestamp: new Date().toISOString()
       });
     }
@@ -1597,43 +1548,9 @@ function doPost(e) {
             }
           });
 
-          // 2. Juga update ke sheet "desil" jika sheet tersebut ada
-          try {
-            var ss = getSpreadsheet();
-            var dSheet = ss.getSheetByName(SHEET_NAME_DESIL) || ss.getSheetByName("desil");
-            if (dSheet) {
-              var dValues = dSheet.getDataRange().getValues();
-              var dHeaderRow = dValues[0] ? dValues[0].map(function(h) { return String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''); }) : ["nisn", "desil", "ket_pip"];
-              var dNisnCol = dHeaderRow.indexOf("nisn") >= 0 ? dHeaderRow.indexOf("nisn") : 0;
-              var dDesilCol = dHeaderRow.indexOf("desil") >= 0 ? dHeaderRow.indexOf("desil") : 1;
-              var dKetPipCol = dHeaderRow.findIndex(function(h) { return h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip"; });
-              if (dKetPipCol < 0) {
-                dKetPipCol = dHeaderRow.length;
-                dSheet.getRange(1, dKetPipCol + 1).setNumberFormat("@").setValue("ket_pip");
-              }
-              var colCount = Math.max(dNisnCol, dDesilCol, dKetPipCol) + 1;
-              var rowsToWrite = items.map(function(d) {
-                var row = new Array(colCount).fill("");
-                row[dNisnCol] = String(d.nisn || "").trim();
-                row[dDesilCol] = String(d.desil !== undefined ? d.desil : (d.Desil || "")).trim();
-                row[dKetPipCol] = String(d.ket_pip !== undefined ? d.ket_pip : (d.ketPip || d.Ket_PIP || "")).trim();
-                return row;
-              });
-              var neededRows = rowsToWrite.length + 1;
-              var maxRows = dSheet.getMaxRows();
-              if (maxRows < neededRows) dSheet.insertRowsAfter(maxRows, neededRows - maxRows + 20);
-              if (dSheet.getLastRow() > 1) dSheet.getRange(2, 1, dSheet.getLastRow() - 1, colCount).clearContent();
-              var targetRange = dSheet.getRange(2, 1, rowsToWrite.length, colCount);
-              targetRange.setNumberFormat("@");
-              targetRange.setValues(rowsToWrite);
-            }
-          } catch (eDesilSync) {
-            Logger.log("Peringatan sinkronisasi sheet desil: " + eDesilSync.message);
-          }
-
           return responseJSON({
             status: "success",
-            message: "Berhasil menyimpan " + dataUpdatedCount + " data desil & ket_pip ke sheet data!",
+            message: "Berhasil menyimpan " + dataUpdatedCount + " data desil & ket_pip langsung ke sheet data!",
             total: items.length,
             updatedInData: dataUpdatedCount
           });
@@ -1666,52 +1583,11 @@ function doPost(e) {
         dataSaved = true;
       }
 
-      // Update juga ke sheet "desil" jika ada
-      try {
-        var ss = getSpreadsheet();
-        var dSheet = ss.getSheetByName(SHEET_NAME_DESIL) || ss.getSheetByName("desil");
-        if (dSheet) {
-          var dVals = dSheet.getDataRange().getValues();
-          var dHeaders = dVals[0] ? dVals[0].map(function(h) { return String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''); }) : ["nisn", "desil", "ket_pip"];
-          var dNisnCol = dHeaders.indexOf("nisn") >= 0 ? dHeaders.indexOf("nisn") : 0;
-          var dDesilCol = dHeaders.indexOf("desil") >= 0 ? dHeaders.indexOf("desil") : 1;
-          var dKetPipCol = dHeaders.findIndex(function(h) { return h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip"; });
-          if (dKetPipCol < 0) {
-            dKetPipCol = dHeaders.length;
-            dSheet.getRange(1, dKetPipCol + 1).setNumberFormat("@").setValue("ket_pip");
-          }
-          var dFoundRow = -1;
-          for (var dr = 1; dr < dVals.length; dr++) {
-            var rN = String(dVals[dr][dNisnCol] || "").trim();
-            if (rN === targetNisn || (cleanTargetNisn && rN.replace(/[^0-9]/g, '') === cleanTargetNisn)) {
-              dFoundRow = dr + 1;
-              break;
-            }
-          }
-          if (dFoundRow > 1) {
-            if (desilVal !== undefined) dSheet.getRange(dFoundRow, dDesilCol + 1).setNumberFormat("@").setValue(desilVal);
-            if (ketPipVal !== undefined) dSheet.getRange(dFoundRow, dKetPipCol + 1).setNumberFormat("@").setValue(ketPipVal);
-          } else if (targetNisn) {
-            var newRIdx = dSheet.getLastRow() + 1;
-            var cCount = Math.max(dNisnCol, dDesilCol, dKetPipCol) + 1;
-            var newR = new Array(cCount).fill("");
-            newR[dNisnCol] = targetNisn;
-            newR[dDesilCol] = desilVal !== undefined ? desilVal : "";
-            newR[dKetPipCol] = ketPipVal !== undefined ? ketPipVal : "";
-            var rRange = dSheet.getRange(newRIdx, 1, 1, cCount);
-            rRange.setNumberFormat("@");
-            rRange.setValues([newR]);
-          }
-        }
-      } catch (eD) {
-        Logger.log("Catatan: sheet desil update: " + eD.message);
-      }
-
       return responseJSON({
         status: "success",
         message: dataSaved 
-          ? "Data desil & ket_pip berhasil disimpan ke sheet data (baris " + foundRowInData + ")" 
-          : "Data desil berhasil diproses",
+          ? "Data desil & ket_pip berhasil disimpan langsung ke sheet data (baris " + foundRowInData + ")" 
+          : "Data desil berhasil diproses di sheet data",
         row: foundRowInData,
         data: { nisn: targetNisn, desil: desilVal, ket_pip: ketPipVal }
       });
