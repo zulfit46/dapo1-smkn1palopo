@@ -37,6 +37,7 @@ interface KetDesilTabProps {
   showToast?: (message: string) => void;
   isDesilAktif?: boolean;
   onToggleDesilAktif?: (newStatus?: boolean) => void;
+  onRefreshStudents?: () => Promise<void>;
 }
 
 // Helper normalisasi nama rombel/kelas
@@ -158,7 +159,8 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
   waliKelasList = [],
   showToast,
   isDesilAktif: isDesilAktifProp,
-  onToggleDesilAktif: onToggleDesilAktifProp
+  onToggleDesilAktif: onToggleDesilAktifProp,
+  onRefreshStudents
 }) => {
   const isAdmin = !currentUser || !isUserRole(currentUser) || isAdminRole(currentUser);
 
@@ -283,11 +285,18 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
   const loadDesilData = async (forceRefresh: boolean = false) => {
     setIsLoading(true);
     try {
+      if (forceRefresh) {
+        // Hapus cache lokal agar data yang dihapus langsung di Google Sheets tidak muncul lagi
+        localStorage.removeItem(LOCAL_STORAGE_DESIL_KEY);
+        if (onRefreshStudents) {
+          await onRefreshStudents();
+        }
+      }
       const data = await fetchDesilDirectly(appConfig.webAppUrl, appConfig.spreadsheetId, forceRefresh);
       if (data && Array.isArray(data)) {
         setDesilList(data);
         if (forceRefresh) {
-          triggerToast(`Data Keterangan Desil & PIP berhasil diperbarui (${data.length} baris)`);
+          triggerToast(`Data Keterangan Desil & PIP berhasil diperbarui dari sheet "data" (${data.length} baris)`);
         }
       }
     } catch (err: any) {
@@ -320,8 +329,8 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
     desilList.forEach((d) => {
       if (d.nisn) {
         const itemVal = {
-          desil: String(d.desil || '').trim(),
-          ket_pip: String(d.ket_pip || '').trim()
+          desil: String(d.desil !== undefined ? d.desil : '').trim(),
+          ket_pip: String(d.ket_pip !== undefined ? d.ket_pip : '').trim()
         };
         map.set(String(d.nisn).trim(), itemVal);
         const clean = cleanNisn(d.nisn);
@@ -342,9 +351,9 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
   }, [students, onlyActive]);
 
-  // Menggabungkan siswa sheet "data" dengan data sheet "desil" (hanya siswa aktif jika onlyActive = true)
+  // Menggabungkan siswa sheet "data" dengan data desil (hanya siswa aktif jika onlyActive = true)
+  // CATATAN: Semua siswa HANYA bersumber dari sheet "data". Jika sebuah baris dihapus di sheet "data" Google Sheets, otomatis tidak tampil lagi.
   const combinedData = useMemo(() => {
-    const allNisns = new Set<string>();
     const resultList: Array<{
       nisn: string;
       nama: string;
@@ -358,54 +367,34 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
     // Filter sumber siswa berdasarkan status aktif
     const eligibleStudents = onlyActive ? students.filter(isStudentActive) : students;
 
-    // 1. Siswa dari sheet "data"
+    // 1. Siswa dari sheet "data" adalah satu-satunya sumber data siswa resmi
     eligibleStudents.forEach((s) => {
       const sNisn = String(s.nisn || '').trim();
       if (!sNisn) return;
-      allNisns.add(sNisn);
       const clean = cleanNisn(sNisn);
-      if (clean) allNisns.add(clean);
 
       const dObj = desilDataMap.get(sNisn) || (clean ? desilDataMap.get(clean) : undefined);
+      // Prioritaskan nilai dari desilDataMap jika baru diubah (termasuk jika dikosongkan), atau langsung dari s (sheet "data")
+      const effectiveDesil = (dObj?.desil !== undefined) 
+        ? dObj.desil 
+        : String(s.desil || '').trim();
+      const effectiveKetPip = (dObj?.ket_pip !== undefined) 
+        ? dObj.ket_pip 
+        : String(s.ket_pip || s.ketPip || '').trim();
+
       resultList.push({
         nisn: sNisn,
         nama: s.nama || '-',
         rombel: s.kelas || '-',
-        desil: dObj?.desil || '',
-        ket_pip: dObj?.ket_pip || '',
+        desil: effectiveDesil,
+        ket_pip: effectiveKetPip,
         studentObj: s,
         isAktif: isStudentActive(s)
       });
     });
 
-    // 2. Baris dari sheet "desil" yang mungkin belum ada di sheet "data"
-    desilList.forEach((d) => {
-      const dNisn = String(d.nisn || '').trim();
-      const clean = cleanNisn(dNisn);
-      if (dNisn && !allNisns.has(dNisn) && (!clean || !allNisns.has(clean))) {
-        const matchStudent = studentByNisnMap.get(dNisn) || (clean ? studentByNisnMap.get(clean) : undefined);
-
-        // Jika filter hanya siswa aktif aktif, dan siswa ini terdata tapi statusnya tidak aktif, abaikan
-        if (onlyActive && matchStudent && !isStudentActive(matchStudent)) {
-          return;
-        }
-
-        allNisns.add(dNisn);
-        if (clean) allNisns.add(clean);
-        resultList.push({
-          nisn: dNisn,
-          nama: matchStudent?.nama || d.nama || 'Siswa Baru (Belum Terdata)',
-          rombel: matchStudent?.kelas || d.rombel || '-',
-          desil: String(d.desil || '').trim(),
-          ket_pip: String(d.ket_pip || '').trim(),
-          studentObj: matchStudent,
-          isAktif: matchStudent ? isStudentActive(matchStudent) : true
-        });
-      }
-    });
-
     return resultList;
-  }, [students, desilList, desilDataMap, studentByNisnMap, onlyActive]);
+  }, [students, desilDataMap, onlyActive]);
 
   // Filter Data
   const filteredData = useMemo(() => {
@@ -522,13 +511,19 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
       return next;
     });
 
+    // Sinkronkan juga langsung ke objek student di memori aplikasi
+    const targetStudent = students.find((s) => String(s.nisn).trim() === cleanId);
+    if (targetStudent) {
+      targetStudent.desil = newDesil;
+    }
+
     try {
-      await saveDesilDirectly(appConfig.webAppUrl, cleanId, { desil: newDesil });
+      const res = await saveDesilDirectly(appConfig.webAppUrl, cleanId, { desil: newDesil });
       setJustSavedNisn(cleanId);
       setTimeout(() => setJustSavedNisn(null), 2500);
 
       const labelDesil = newDesil ? `"${newDesil}"` : 'dikosongkan';
-      triggerToast(`Desil untuk ${studentName || cleanId} berhasil disimpan: ${labelDesil}`);
+      triggerToast(res?.message || `Desil untuk ${studentName || cleanId} berhasil disimpan ke sheet data: ${labelDesil}`);
     } catch (err: any) {
       triggerToast(`Data tersimpan lokal: ${err?.message || 'Gagal sinkron ke spreadsheet'}`);
     } finally {
@@ -558,13 +553,20 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
       return next;
     });
 
+    // Sinkronkan juga langsung ke objek student di memori aplikasi
+    const targetStudent = students.find((s) => String(s.nisn).trim() === cleanId);
+    if (targetStudent) {
+      targetStudent.ket_pip = newKetPip;
+      targetStudent.ketPip = newKetPip;
+    }
+
     try {
-      await saveDesilDirectly(appConfig.webAppUrl, cleanId, { ket_pip: newKetPip });
+      const res = await saveDesilDirectly(appConfig.webAppUrl, cleanId, { ket_pip: newKetPip });
       setJustSavedNisn(cleanId);
       setTimeout(() => setJustSavedNisn(null), 2500);
 
       const labelPip = newKetPip ? `"${newKetPip}"` : 'dikosongkan';
-      triggerToast(`Ket. PIP untuk ${studentName || cleanId} berhasil disimpan: ${labelPip}`);
+      triggerToast(res?.message || `Ket. PIP untuk ${studentName || cleanId} berhasil disimpan ke sheet data: ${labelPip}`);
     } catch (err: any) {
       triggerToast(`Data tersimpan lokal: ${err?.message || 'Gagal sinkron ke spreadsheet'}`);
     } finally {
@@ -754,7 +756,7 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
             <Sparkles className="w-5 h-5 text-indigo-600" /> Keterangan Desil & PIP
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Pilih keterangan desil dan status penerimaan PIP untuk masing-masing peserta didik. Data tersimpan di sheet <strong>desil</strong>.
+            Pilih keterangan desil dan status penerimaan PIP untuk masing-masing peserta didik. Perubahan tersimpan langsung di sheet <strong>"data"</strong> (kolom <code>desil</code> & <code>ket_pip</code>).
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
@@ -883,7 +885,7 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
           <button
             onClick={() => loadDesilData(true)}
             disabled={isLoading}
-            title="Segarkan data dari sheet desil"
+            title="Segarkan data dari sheet data (perbarui siswa & desil)"
             className="p-2 border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 rounded-xl transition-all cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-indigo-600' : ''}`} />
@@ -915,64 +917,85 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
             <span>Unduh Excel</span>
           </button>
 
-          {/* Tombol Aktif/Nonaktif Tab 2 (Khusus Admin) */}
+          {/* Tombol Script Apps Script (code.gs) Khusus Admin */}
           {isAdmin && (
             <button
               type="button"
+              onClick={() => setIsCodeGsModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer shadow-xs transition-all"
+              title="Buka Script Google Apps Script (code.gs) untuk sinkronisasi ke sheet data"
+            >
+              <FileCode className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Script code.gs</span>
+            </button>
+          )}
+
+        </div>
+      </div>
+
+      {/* Status Keterangan Desil & PIP Bar (Disamakan dengan Tampilan Usulan PIP) */}
+      <div className={`border rounded-2xl p-4 lg:p-5 transition-all ${
+        effectiveDesilAktif 
+          ? 'bg-white border-slate-200 shadow-xs' 
+          : 'bg-rose-50/70 border-rose-200'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-xl ${
+              effectiveDesilAktif 
+                ? 'bg-emerald-50 text-emerald-700' 
+                : 'bg-rose-100 text-rose-700'
+            }`}>
+              {effectiveDesilAktif ? <Power className="w-5 h-5" /> : <PowerOff className="w-5 h-5" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Status Keterangan Desil & PIP
+                </span>
+                {effectiveDesilAktif ? (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                    AKTIF
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-600 text-white animate-pulse">
+                    DINONAKTIFKAN
+                  </span>
+                )}
+              </div>
+              {!effectiveDesilAktif && (
+                <p className="text-xs text-rose-700 mt-1">
+                  Keterangan desil sedang ditutup.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {isAdmin && (
+            <button
               onClick={() => handleToggleDesilAktif()}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-xs font-semibold shadow-2xs transition-all cursor-pointer shrink-0 ${
                 effectiveDesilAktif
-                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                  : 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-rose-200'
+                  ? 'border-rose-300 hover:border-rose-400 bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800'
+                  : 'border-emerald-300 hover:border-emerald-400 bg-white hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800'
               }`}
-              title={effectiveDesilAktif ? 'Klik untuk menonaktifkan perubahan data pada Tab 2' : 'Klik untuk mengaktifkan perubahan data pada Tab 2'}
+              title={effectiveDesilAktif ? 'Nonaktifkan keterangan desil & PIP' : 'Aktifkan keterangan desil & PIP'}
             >
               {effectiveDesilAktif ? (
                 <>
-                  <Power className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Tab 2: Aktif</span>
+                  <PowerOff className="w-3.5 h-3.5" />
+                  <span>Nonaktifkan</span>
                 </>
               ) : (
                 <>
-                  <Lock className="w-3.5 h-3.5 text-white" />
-                  <span>Tab 2: Terkunci (Nonaktif)</span>
+                  <Power className="w-3.5 h-3.5" />
+                  <span>Aktifkan</span>
                 </>
               )}
             </button>
           )}
         </div>
       </div>
-
-      {/* Banner Status Nonaktif Tab 2 */}
-      {!effectiveDesilAktif && (
-        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center shrink-0 text-rose-600">
-              <Lock className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="font-bold flex items-center gap-2 text-sm text-rose-900">
-                <span>Perubahan Data Tab 2 Dinonaktifkan</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-600 text-white uppercase">
-                  Terkunci
-                </span>
-              </div>
-              <p className="text-rose-700 mt-0.5">
-                Admin telah menyetel status Tab 2 ke <strong>Nonaktif</strong>. Semua perubahan data (Keterangan Desil, Ket. PIP, dan Smart Impor) saat ini dikunci.
-              </p>
-            </div>
-          </div>
-          {isAdmin && (
-            <button
-              onClick={() => handleToggleDesilAktif(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 self-end sm:self-center transition-all"
-            >
-              <Power className="w-3.5 h-3.5" />
-              <span>Buka Kunci / Aktifkan</span>
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Ringkasan Status Desil & PIP */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
@@ -1005,7 +1028,9 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
       </div>
 
       {/* Tabel Bersih Keterangan Desil & PIP */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className={`bg-white rounded-2xl border shadow-xs overflow-hidden transition-all ${
+        !effectiveDesilAktif ? 'border-rose-200' : 'border-slate-200'
+      }`}>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
@@ -1040,7 +1065,7 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
                       key={item.nisn} 
                       className={`hover:bg-slate-50/70 transition-colors ${
                         isJustSaved ? 'bg-emerald-50/40' : ''
-                      }`}
+                      } ${!effectiveDesilAktif ? 'opacity-75' : ''}`}
                     >
                       <td className="py-3 px-4 text-center font-medium text-slate-500">
                         {rowNumber}
@@ -1196,7 +1221,7 @@ export const KetDesilTab: React.FC<KetDesilTabProps> = ({
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
                 <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  Perubahan akan diterapkan pada sheet <strong>desil</strong> di spreadsheet (header: <code>nisn</code>, <code>desil</code>, <code>ket_pip</code>). Data yang cocok berdasarkan NISN akan diperbarui.
+                  Perubahan akan diterapkan langsung pada sheet <strong>data</strong> (kolom: <code>desil</code>, <code>ket_pip</code>) dan sheet <strong>desil</strong> di Google Spreadsheet. Data siswa yang cocok berdasarkan NISN akan otomatis diperbarui.
                 </div>
               </div>
 
