@@ -26,6 +26,10 @@ export interface Student {
   timestamp?: string;
   vervalOleh?: string;
   verval_oleh?: string;
+  // Field Desil & Keterangan PIP di sheet "data"
+  desil?: string;
+  ket_pip?: string;
+  ketPip?: string;
   tanggalMasuk?: string;
   sekolahAsal?: string;
   tinggiBadan?: number; // cm
@@ -126,6 +130,10 @@ export function normalizeStudent(s: any): Student {
     nama_ibu: ibu || s.nama_ibu || '',
     status: s.status !== undefined && s.status !== null && String(s.status).trim() ? String(s.status).trim() : 'Aktif',
     ket: s.ket !== undefined && s.ket !== null ? String(s.ket).trim() : '',
+    // Desil & Keterangan PIP dari sheet "data"
+    desil: String(s.desil || s.Desil || '').trim(),
+    ket_pip: String(s.ket_pip || s.ketPip || s.Ket_PIP || s['ket_pip'] || s['ket_PIP'] || s['Ket. PIP'] || s.ketpip || s['ketpip'] || '').trim(),
+    ketPip: String(s.ket_pip || s.ketPip || s.Ket_PIP || s['ket_pip'] || s['ket_PIP'] || s['Ket. PIP'] || s.ketpip || s['ketpip'] || '').trim(),
   };
 }
 

@@ -178,7 +178,7 @@ const OFFICIAL_STUDENT_HEADERS = [
   "pekwali", "pengwali", "nikwali", "rombel", "no_ujian", "no_ijazah", "kip", "no_kip",
   "nama_kip", "no_kks", "reg_akta", "Bank", "no_rek", "rek_nama", "layak_pip", "alasan",
   "keb_khusus", "sekolah_asal", "anak_ke", "Lintang", "Bujur", "no_kk", "berat_badan",
-  "tinggi_badan", "lingkar_kepala", "jum_saudara", "jarak_sekolah", "status", "ket"
+  "tinggi_badan", "lingkar_kepala", "jum_saudara", "jarak_sekolah", "status", "ket", "desil", "ket_pip"
 ];
 
 // List Header Resmi GTK
@@ -420,21 +420,8 @@ function getPIPSheet() {
 }
 
 function getDesilSheet() {
-  const ss = getSpreadsheet();
-  const allSheets = ss.getSheets();
-  let sheet = allSheets.find(s => {
-    const name = s.getName().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    return name === "desil" || name === "ketdesil" || name === "keterangandesil";
-  });
-  if (!sheet) {
-    sheet = ss.getSheetByName(SHEET_NAME_DESIL);
-  }
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME_DESIL);
-    sheet.appendRow(DESIL_OFFICIAL_HEADERS);
-    sheet.getRange(1, 1, 1, DESIL_OFFICIAL_HEADERS.length).setFontWeight("bold").setBackground("#e0e7ff");
-  }
-  return sheet;
+  // Keterangan desil & ket_pip kini tersimpan langsung di sheet utama "data"
+  return getStudentSheet();
 }
 
 /**
@@ -525,16 +512,16 @@ function doGet(e) {
     
     // 1. DATA GTK
     if (rawTarget === "gtk") {
-      const sheet = getGtkSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      const gtkSheet = getGtkSheet();
+      const gtkData = gtkSheet.getDataRange().getValues();
+      if (gtkData.length <= 1) {
         return responseJSON({ status: "success", target: "gtk", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim());
-      const rows = data.slice(1);
-      const gtkList = rows.map((row, index) => {
+      const gtkHeaders = gtkData[0].map(h => String(h).trim());
+      const gtkRows = gtkData.slice(1);
+      const gtkList = gtkRows.map((row, index) => {
         const obj = { rowIndex: index + 2 };
-        headers.forEach((header, colIdx) => {
+        gtkHeaders.forEach((header, colIdx) => {
           let val = row[colIdx];
           if (val instanceof Date) {
             val = formatToDDMMYYYY(val);
@@ -650,8 +637,8 @@ function doGet(e) {
 
     // 1b. DATA RAW PTK (sheet: ptk)
     if (rawTarget === "ptk") {
-      const ss = getSpreadsheet();
-      const ptkSheet = ss.getSheetByName("ptk") || ss.getSheetByName("PTK");
+      const ptkSs = getSpreadsheet();
+      const ptkSheet = ptkSs.getSheetByName("ptk") || ptkSs.getSheetByName("PTK");
       if (!ptkSheet) {
         return responseJSON({ status: "success", target: "ptk", total: 0, data: [] });
       }
@@ -690,16 +677,16 @@ function doGet(e) {
 
     // 2. DATA NAIKPANGKAT / PANGKAT
     if (rawTarget === "naikpangkat" || rawTarget === "pangkat") {
-      const sheet = getNaikPangkatSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      const npSheet = getNaikPangkatSheet();
+      const npData = npSheet.getDataRange().getValues();
+      if (npData.length <= 1) {
         return responseJSON({ status: "success", target: "naikpangkat", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim());
-      const rows = data.slice(1);
-      const pangkatList = rows.map((row, index) => {
+      const npHeaders = npData[0].map(h => String(h).trim());
+      const npRows = npData.slice(1);
+      const pangkatList = npRows.map((row, index) => {
         const obj = { rowIndex: index + 2 };
-        headers.forEach((header, colIdx) => {
+        npHeaders.forEach((header, colIdx) => {
           let val = row[colIdx];
           if (val instanceof Date) {
             val = formatToDDMMYYYY(val);
@@ -736,16 +723,16 @@ function doGet(e) {
 
     // 3. DATA KGB
     if (rawTarget === "kgb") {
-      const sheet = getKgbSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      const kgbSheet = getKgbSheet();
+      const kgbData = kgbSheet.getDataRange().getValues();
+      if (kgbData.length <= 1) {
         return responseJSON({ status: "success", target: "kgb", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim());
-      const rows = data.slice(1);
-      const kgbList = rows.map((row, index) => {
+      const kgbHeaders = kgbData[0].map(h => String(h).trim());
+      const kgbRows = kgbData.slice(1);
+      const kgbList = kgbRows.map((row, index) => {
         const obj = { rowIndex: index + 2 };
-        headers.forEach((header, colIdx) => {
+        kgbHeaders.forEach((header, colIdx) => {
           let val = row[colIdx];
           if (val instanceof Date) {
             val = formatToDDMMYYYY(val);
@@ -786,16 +773,16 @@ function doGet(e) {
 
     // 4. DATA MUTASI MASUK
     if (rawTarget === "mutasi_masuk" || rawTarget === "mutasimasuk" || rawTarget === "mutasi") {
-      const sheet = getMutasiMasukSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      const mmSheet = getMutasiMasukSheet();
+      const mmData = mmSheet.getDataRange().getValues();
+      if (mmData.length <= 1) {
         return responseJSON({ status: "success", target: "mutasi_masuk", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim());
-      const rows = data.slice(1);
-      const list = rows.map((row, index) => {
+      const mmHeaders = mmData[0].map(h => String(h).trim());
+      const mmRows = mmData.slice(1);
+      const mutasiMasukList = mmRows.map((row, index) => {
         const obj = { rowIndex: index + 2 };
-        headers.forEach((header, colIdx) => {
+        mmHeaders.forEach((header, colIdx) => {
           let val = row[colIdx];
           if (val instanceof Date) {
             val = formatToDDMMYYYY(val);
@@ -831,24 +818,24 @@ function doGet(e) {
       return responseJSON({
         status: "success",
         target: "mutasi_masuk",
-        total: list.length,
-        data: list,
+        total: mutasiMasukList.length,
+        data: mutasiMasukList,
         timestamp: new Date().toISOString()
       });
     }
 
     // 5. DATA MUTASI KELUAR
     if (rawTarget === "mutasi_keluar" || rawTarget === "mutasikeluar") {
-      const sheet = getMutasiKeluarSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      const mkSheet = getMutasiKeluarSheet();
+      const mkData = mkSheet.getDataRange().getValues();
+      if (mkData.length <= 1) {
         return responseJSON({ status: "success", target: "mutasi_keluar", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim());
-      const rows = data.slice(1);
-      const list = rows.map((row, index) => {
+      const mkHeaders = mkData[0].map(h => String(h).trim());
+      const mkRows = mkData.slice(1);
+      const mutasiKeluarList = mkRows.map((row, index) => {
         const obj = { rowIndex: index + 2 };
-        headers.forEach((header, colIdx) => {
+        mkHeaders.forEach((header, colIdx) => {
           let val = row[colIdx];
           if (val instanceof Date) {
             val = formatToDDMMYYYY(val);
@@ -882,24 +869,24 @@ function doGet(e) {
       return responseJSON({
         status: "success",
         target: "mutasi_keluar",
-        total: list.length,
-        data: list,
+        total: mutasiKeluarList.length,
+        data: mutasiKeluarList,
         timestamp: new Date().toISOString()
       });
     }
 
     // 6. DATA PEMBELAJARAN
     if (rawTarget === "pembelajaran" || rawTarget === "jadwalpembelajaran" || rawTarget === "bebanmengajar") {
-      const sheet = getPembelajaranSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      const pbSheet = getPembelajaranSheet();
+      const pbData = pbSheet.getDataRange().getValues();
+      if (pbData.length <= 1) {
         return responseJSON({ status: "success", target: "pembelajaran", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim());
-      const rows = data.slice(1);
-      const list = rows.map((row, index) => {
+      const pbHeaders = pbData[0].map(h => String(h).trim());
+      const pbRows = pbData.slice(1);
+      const pembList = pbRows.map((row, index) => {
         const obj = { rowIndex: index + 2 };
-        headers.forEach((header, colIdx) => {
+        pbHeaders.forEach((header, colIdx) => {
           let val = row[colIdx];
           if (val instanceof Date) {
             val = formatToDDMMYYYY(val);
@@ -938,24 +925,24 @@ function doGet(e) {
       return responseJSON({
         status: "success",
         target: "pembelajaran",
-        total: list.length,
-        data: list,
+        total: pembList.length,
+        data: pembList,
         timestamp: new Date().toISOString()
       });
     }
 
     // 7. DATA GAJI
     if (rawTarget === "gaji" || rawTarget === "datagaji" || rawTarget === "gajigtk" || rawTarget === "payroll") {
-      const sheet = getGajiSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      const gjSheet = getGajiSheet();
+      const gjData = gjSheet.getDataRange().getValues();
+      if (gjData.length <= 1) {
         return responseJSON({ status: "success", target: "gaji", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim());
-      const rows = data.slice(1);
-      const list = rows.map((row, index) => {
+      const gjHeaders = gjData[0].map(h => String(h).trim());
+      const gjRows = gjData.slice(1);
+      const gajiList = gjRows.map((row, index) => {
         const obj = { rowIndex: index + 2 };
-        headers.forEach((header, colIdx) => {
+        gjHeaders.forEach((header, colIdx) => {
           let val = row[colIdx];
           const strVal = val !== undefined && val !== null ? String(val).trim() : "";
           obj[header] = strVal;
@@ -977,24 +964,24 @@ function doGet(e) {
       return responseJSON({
         status: "success",
         target: "gaji",
-        total: list.length,
-        data: list,
+        total: gajiList.length,
+        data: gajiList,
         timestamp: new Date().toISOString()
       });
     }
 
     // 8. DATA USULAN PIP
     if (rawTarget === "pip" || rawTarget === "usulanpip" || rawTarget === "datapip") {
-      const sheet = getPIPSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      const pipSheet = getPIPSheet();
+      const pipData = pipSheet.getDataRange().getValues();
+      if (pipData.length <= 1) {
         return responseJSON({ status: "success", target: "pip", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim());
-      const rows = data.slice(1);
-      const list = rows.map((row, index) => {
+      const pipHeaders = pipData[0].map(h => String(h).trim());
+      const pipRows = pipData.slice(1);
+      const pipList = pipRows.map((row, index) => {
         const obj = { rowIndex: index + 2, no: index + 1 };
-        headers.forEach((header, colIdx) => {
+        pipHeaders.forEach((header, colIdx) => {
           let val = row[colIdx];
           const strVal = val !== undefined && val !== null ? String(val).trim() : "";
           obj[header] = strVal;
@@ -1020,57 +1007,140 @@ function doGet(e) {
       return responseJSON({
         status: "success",
         target: "pip",
-        total: list.length,
-        data: list,
+        total: pipList.length,
+        data: pipList,
         timestamp: new Date().toISOString()
       });
     }
 
-    // 9. DATA KETERANGAN DESIL (sheet: desil)
+    // 9. DATA KETERANGAN DESIL (sumber data murni: sheet "data", tidak menggunakan sheet desil)
     if (rawTarget === "desil" || rawTarget === "ket_desil" || rawTarget === "ketdesil") {
-      const sheet = getDesilSheet();
-      const data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
-        return responseJSON({ status: "success", target: "desil", total: 0, data: [] });
+      const studentSheetForDesil = getStudentSheet();
+      const studentDataForDesil = studentSheetForDesil.getDataRange().getValues();
+      if (studentDataForDesil.length <= 1) {
+        return responseJSON({ status: "success", target: "data", total: 0, data: [] });
       }
-      const headers = data[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-      const nisnIdx = headers.indexOf("nisn");
-      const desilIdx = headers.indexOf("desil");
-      const ketPipIdx = headers.findIndex(h => h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip");
-      const rows = data.slice(1);
-      const list = rows.map((row, index) => {
-        const rNisn = nisnIdx >= 0 ? String(row[nisnIdx] || '').trim() : '';
-        const rDesil = desilIdx >= 0 ? String(row[desilIdx] || '').trim() : '';
-        const rKetPip = ketPipIdx >= 0 ? String(row[ketPipIdx] || '').trim() : '';
-        return {
-          rowIndex: index + 2,
-          nisn: rNisn,
-          desil: rDesil,
-          ket_pip: rKetPip
-        };
-      }).filter(item => Boolean(item.nisn));
+
+      const sHeaders = studentDataForDesil[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const sNisnIdx = sHeaders.indexOf("nisn");
+      const sDesilIdx = sHeaders.indexOf("desil");
+      const sKetPipIdx = sHeaders.findIndex(h => h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip");
+      const sNamaIdx = sHeaders.findIndex(h => h === "nama" || h === "namasiswa" || h === "namamurid");
+      const sKelasIdx = sHeaders.findIndex(h => h === "rombel" || h === "kelas");
+
+      const desilFromData = [];
+      for (let r = 1; r < studentDataForDesil.length; r++) {
+        const row = studentDataForDesil[r];
+        const rNisn = sNisnIdx >= 0 ? String(row[sNisnIdx] || '').trim() : '';
+        if (rNisn) {
+          desilFromData.push({
+            rowIndex: r + 1,
+            nisn: rNisn,
+            nama: sNamaIdx >= 0 ? String(row[sNamaIdx] || '').trim() : '',
+            rombel: sKelasIdx >= 0 ? String(row[sKelasIdx] || '').trim() : '',
+            desil: sDesilIdx >= 0 ? String(row[sDesilIdx] || '').trim() : '',
+            ket_pip: sKetPipIdx >= 0 ? String(row[sKetPipIdx] || '').trim() : ''
+          });
+        }
+      }
 
       return responseJSON({
         status: "success",
-        target: "desil",
-        total: list.length,
-        data: list,
+        target: "data",
+        total: desilFromData.length,
+        data: desilFromData,
         timestamp: new Date().toISOString()
       });
     }
 
-    // 4. Default: DATA SISWA
-    const sheet = getStudentSheet();
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) {
+    // 10. DATA WALI KELAS (sheet: walikelas)
+    if (rawTarget === "walikelas" || rawTarget === "wali_kelas" || rawTarget === "wali") {
+      const wkSheet = getWaliKelasSheet();
+      const wkData = wkSheet.getDataRange().getValues();
+      if (wkData.length <= 1) {
+        return responseJSON({ status: "success", target: "walikelas", total: 0, data: [] });
+      }
+      const wkHeaders = wkData[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+      let kelasIdx = wkHeaders.findIndex(h => h === "kelas" || h === "rombel");
+      let namaIdx = wkHeaders.findIndex(h => h === "nama" || h === "walikelas" || h === "namawali");
+      let nipIdx = wkHeaders.findIndex(h => h === "nip");
+
+      if (kelasIdx === -1) kelasIdx = 0;
+      if (namaIdx === -1) namaIdx = 1;
+      if (nipIdx === -1) nipIdx = 2;
+
+      const wkRows = wkData.slice(1);
+      const waliKelasList = wkRows.map((row, index) => {
+        const k = row[kelasIdx] !== undefined && row[kelasIdx] !== null ? String(row[kelasIdx]).trim() : "";
+        const n = row[namaIdx] !== undefined && row[namaIdx] !== null ? String(row[namaIdx]).trim() : "";
+        const p = nipIdx >= 0 && row[nipIdx] !== undefined && row[nipIdx] !== null ? String(row[nipIdx]).trim() : "";
+        return {
+          rowIndex: index + 2,
+          kelas: k,
+          nama: n,
+          nip: p
+        };
+      }).filter(w => Boolean(w.kelas && w.nama && w.kelas.toLowerCase() !== "kelas"));
+
+      return responseJSON({
+        status: "success",
+        target: "walikelas",
+        total: waliKelasList.length,
+        data: waliKelasList,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 11. DATA JURUSAN (sheet: jurusan)
+    if (rawTarget === "jurusan" || rawTarget === "datajurusan" || rawTarget === "programkeahlian") {
+      const jurSheet = getJurusanSheet();
+      const jurData = jurSheet.getDataRange().getValues();
+      if (jurData.length <= 1) {
+        return responseJSON({ status: "success", target: "jurusan", total: 0, data: [] });
+      }
+      const jurHeaders = jurData[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+      let kodeIdx = jurHeaders.findIndex(h => h === "kode" || h === "kodejurusan");
+      let progIdx = jurHeaders.findIndex(h => h === "programkeahlian" || h === "program");
+      let konsIdx = jurHeaders.findIndex(h => h === "konsentrasikeahlian" || h === "konsentrasi" || h === "jurusan");
+
+      if (kodeIdx === -1) kodeIdx = 0;
+      if (progIdx === -1) progIdx = 1;
+      if (konsIdx === -1) konsIdx = 2;
+
+      const jurRows = jurData.slice(1);
+      const jurusanList = jurRows.map((row, index) => {
+        const kode = row[kodeIdx] !== undefined && row[kodeIdx] !== null ? String(row[kodeIdx]).trim() : "";
+        const prog = row[progIdx] !== undefined && row[progIdx] !== null ? String(row[progIdx]).trim() : "";
+        const kons = row[konsIdx] !== undefined && row[konsIdx] !== null ? String(row[konsIdx]).trim() : "";
+        return {
+          rowIndex: index + 2,
+          kode: kode,
+          programKeahlian: prog,
+          konsentrasiKeahlian: kons
+        };
+      }).filter(j => Boolean(j.kode || j.konsentrasiKeahlian));
+
+      return responseJSON({
+        status: "success",
+        target: "jurusan",
+        total: jurusanList.length,
+        data: jurusanList,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 12. Default: DATA SISWA
+    const studentSheet = getStudentSheet();
+    const studentData = studentSheet.getDataRange().getValues();
+    if (studentData.length <= 1) {
       return responseJSON({ status: "success", target: "data", total: 0, data: [] });
     }
 
-    const headers = data[0].map(h => String(h).trim());
-    const rows = data.slice(1);
-    const students = rows.map((row, index) => {
+    const studentHeaders = studentData[0].map(h => String(h).trim());
+    const studentRows = studentData.slice(1);
+    const students = studentRows.map((row, index) => {
       const obj = { rowIndex: index + 2 };
-      headers.forEach((header, colIdx) => {
+      studentHeaders.forEach((header, colIdx) => {
         let val = row[colIdx];
         if (val instanceof Date) {
           val = formatToDDMMYYYY(val);
@@ -1110,6 +1180,11 @@ function doGet(e) {
         if (hClean === "hp" || hClean === "telepon" || hClean === "nohp") obj["noHp"] = strVal;
         if (hClean === "email") obj["email"] = strVal;
         if (hClean === "sekolahasal") obj["sekolahAsal"] = strVal;
+        if (hClean === "desil" || hClean === "keterangandesil" || hClean === "ketdesil") obj["desil"] = strVal;
+        if (hClean === "ketpip" || hClean === "ket_pip" || hClean === "keteranganpip" || hClean === "statuspip") {
+          obj["ket_pip"] = strVal;
+          obj["ketPip"] = strVal;
+        }
       });
 
       if (!obj.id) {
@@ -1424,80 +1499,136 @@ function doPost(e) {
       });
     }
 
-    // TARGET: DESIL (sheet: desil)
+    // TARGET: DESIL (Menyimpan langsung ke sheet "data" dan sheet "desil")
     if (targetType === "desil" || action === "saveDesil" || action === "updateDesil" || action === "syncAllDesil") {
-      const sheet = getDesilSheet();
-      const values = sheet.getDataRange().getValues();
-      let headerRow = values[0] ? values[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, '')) : ["nisn", "desil", "ket_pip"];
-      let nisnCol = headerRow.indexOf("nisn") >= 0 ? headerRow.indexOf("nisn") : 0;
-      let desilCol = headerRow.indexOf("desil") >= 0 ? headerRow.indexOf("desil") : 1;
-      let ketPipCol = headerRow.findIndex(h => h === "ketpip" || h === "ket_pip" || h === "pip" || h === "keteranganpip");
-      if (ketPipCol < 0) {
-        ketPipCol = headerRow.length;
-        sheet.getRange(1, ketPipCol + 1).setNumberFormat("@").setValue("ket_pip");
-        headerRow.push("ket_pip");
+      // 1. UPDATE LANGSUNG KE SHEET UTAMA: "data" (Data Siswa)
+      var studentSheet = getStudentSheet(); // sheet "data"
+      var sData = studentSheet.getDataRange().getValues();
+      var sHeaders = sData[0] ? sData[0].map(function(h) { return String(h).trim(); }) : [];
+      
+      // Cari kolom nisn di sheet "data"
+      var sNisnCol = sHeaders.findIndex(function(h) {
+        var hc = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return hc === 'nisn';
+      });
+      if (sNisnCol === -1) sNisnCol = 3; // Fallback kolom NISN standar
+
+      var sNipdCol = sHeaders.findIndex(function(h) {
+        var hc = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return hc === 'nipd';
+      });
+      var sNamaCol = sHeaders.findIndex(function(h) {
+        var hc = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return hc === 'nama' || hc === 'namamurid' || hc === 'namasiswa';
+      });
+
+      // Cari kolom desil di sheet "data", jika belum ada otomatis tambahkan header "desil"
+      var sDesilCol = sHeaders.findIndex(function(h) {
+        var hc = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return hc === 'desil' || hc === 'keterangandesil' || hc === 'ketdesil' || hc === 'keterangan_desil';
+      });
+      if (sDesilCol === -1) {
+        sDesilCol = sHeaders.length;
+        studentSheet.getRange(1, sDesilCol + 1).setNumberFormat("@").setValue("desil");
+        sHeaders.push("desil");
       }
 
-      // Sync All / Import All
+      // Cari kolom ket_pip di sheet "data", jika belum ada otomatis tambahkan header "ket_pip"
+      var sKetPipCol = sHeaders.findIndex(function(h) {
+        var hc = h.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return hc === 'ketpip' || hc === 'ket_pip' || hc === 'keteranganpip' || hc === 'statuspip' || hc === 'keterangan_pip';
+      });
+      if (sKetPipCol === -1) {
+        sKetPipCol = sHeaders.length;
+        studentSheet.getRange(1, sKetPipCol + 1).setNumberFormat("@").setValue("ket_pip");
+        sHeaders.push("ket_pip");
+      }
+
+      // Bangun lookup map NISN/NIPD/Nama -> row index (1-indexed) di sheet "data"
+      var studentRowMap = {};
+      for (var r = 1; r < sData.length; r++) {
+        var rNisn = sNisnCol >= 0 ? String(sData[r][sNisnCol] || '').trim() : '';
+        var rNisnClean = rNisn.replace(/[^0-9]/g, '');
+        var rNipd = sNipdCol >= 0 ? String(sData[r][sNipdCol] || '').trim() : '';
+        var rNama = sNamaCol >= 0 ? String(sData[r][sNamaCol] || '').trim().toLowerCase() : '';
+        
+        var rowNumber = r + 1; // 1-indexed baris spreadsheet
+        if (rNisn) studentRowMap[rNisn] = rowNumber;
+        if (rNisnClean) studentRowMap[rNisnClean] = rowNumber;
+        if (rNipd) studentRowMap[rNipd] = rowNumber;
+        if (rNama) studentRowMap[rNama] = rowNumber;
+      }
+
+      // Sync All / Import All Desil
       if (action === "syncAll" || action === "importAll" || action === "saveAll" || action === "syncAllDesil") {
-        const items = contents.items || contents.data || contents.desil || [];
+        var items = contents.items || contents.data || contents.desil || [];
+        var dataUpdatedCount = 0;
+        
         if (items.length > 0) {
-          const colCount = Math.max(nisnCol, desilCol, ketPipCol) + 1;
-          const rowsToWrite = items.map(d => {
-            const row = new Array(colCount).fill("");
-            row[nisnCol] = String(d.nisn || "").trim();
-            row[desilCol] = String(d.desil || "").trim();
-            row[ketPipCol] = String(d.ket_pip || d.ketPip || "").trim();
-            return row;
+          // Update ke sheet "data"
+          items.forEach(function(d) {
+            var targetN = String(d.nisn || d.NISN || "").trim();
+            var targetNClean = targetN.replace(/[^0-9]/g, '');
+            var targetName = String(d.nama || d.Nama || "").trim().toLowerCase();
+            var rowIdx = studentRowMap[targetN] || studentRowMap[targetNClean] || (targetName ? studentRowMap[targetName] : null);
+
+            var dVal = d.desil !== undefined ? String(d.desil).trim() : (d.Desil !== undefined ? String(d.Desil).trim() : undefined);
+            var pVal = d.ket_pip !== undefined ? String(d.ket_pip).trim() : (d.ketPip !== undefined ? String(d.ketPip).trim() : (d.Ket_PIP !== undefined ? String(d.Ket_PIP).trim() : undefined));
+
+            if (rowIdx && rowIdx > 1) {
+              if (dVal !== undefined && sDesilCol >= 0) {
+                studentSheet.getRange(rowIdx, sDesilCol + 1).setNumberFormat("@").setValue(dVal);
+              }
+              if (pVal !== undefined && sKetPipCol >= 0) {
+                studentSheet.getRange(rowIdx, sKetPipCol + 1).setNumberFormat("@").setValue(pVal);
+              }
+              dataUpdatedCount++;
+            }
           });
-          const neededRows = rowsToWrite.length + 1;
-          const maxRows = sheet.getMaxRows();
-          if (maxRows < neededRows) sheet.insertRowsAfter(maxRows, neededRows - maxRows + 20);
-          if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, colCount).clearContent();
-          const targetRange = sheet.getRange(2, 1, rowsToWrite.length, colCount);
-          targetRange.setNumberFormat("@");
-          targetRange.setValues(rowsToWrite);
-          return responseJSON({ status: "success", message: "Berhasil menyimpan seluruh data desil & ket_pip (" + rowsToWrite.length + " data)" });
+
+          return responseJSON({
+            status: "success",
+            message: "Berhasil menyimpan " + dataUpdatedCount + " data desil & ket_pip langsung ke sheet data!",
+            total: items.length,
+            updatedInData: dataUpdatedCount
+          });
         }
       }
 
       // Single Add / Update Desil
-      const targetNisn = String(contents.nisn || (contents.item && contents.item.nisn) || "").trim();
-      const desilVal = contents.desil !== undefined ? String(contents.desil).trim() : (contents.item && contents.item.desil !== undefined ? String(contents.item.desil).trim() : undefined);
-      const ketPipVal = contents.ket_pip !== undefined ? String(contents.ket_pip).trim() : (contents.ketPip !== undefined ? String(contents.ketPip).trim() : (contents.item && contents.item.ket_pip !== undefined ? String(contents.item.ket_pip).trim() : undefined));
-      if (!targetNisn) {
-        return responseJSON({ status: "error", message: "NISN tidak boleh kosong" });
+      var targetNisn = String(contents.nisn || (contents.item && contents.item.nisn) || "").trim();
+      var cleanTargetNisn = targetNisn.replace(/[^0-9]/g, '');
+      var targetNama = String(contents.nama || (contents.item && contents.item.nama) || "").trim().toLowerCase();
+      var targetNipd = String(contents.nipd || (contents.item && contents.item.nipd) || "").trim();
+      var desilVal = contents.desil !== undefined ? String(contents.desil).trim() : (contents.item && contents.item.desil !== undefined ? String(contents.item.desil).trim() : undefined);
+      var ketPipVal = contents.ket_pip !== undefined ? String(contents.ket_pip).trim() : (contents.ketPip !== undefined ? String(contents.ketPip).trim() : (contents.item && contents.item.ket_pip !== undefined ? String(contents.item.ket_pip).trim() : undefined));
+
+      if (!targetNisn && !cleanTargetNisn && !targetNama && !targetNipd) {
+        return responseJSON({ status: "error", message: "NISN atau Nama siswa tidak boleh kosong" });
       }
 
-      let foundRow = -1;
-      for (let r = 1; r < values.length; r++) {
-        const rNisn = String(values[r][nisnCol] || "").trim();
-        if (rNisn === targetNisn) {
-          foundRow = r + 1;
-          break;
+      // Update langsung ke sheet "data"
+      var foundRowInData = studentRowMap[targetNisn] || studentRowMap[cleanTargetNisn] || (targetNipd ? studentRowMap[targetNipd] : null) || (targetNama ? studentRowMap[targetNama] : null) || -1;
+      
+      var dataSaved = false;
+      if (foundRowInData > 1) {
+        if (desilVal !== undefined && sDesilCol >= 0) {
+          studentSheet.getRange(foundRowInData, sDesilCol + 1).setNumberFormat("@").setValue(desilVal);
         }
+        if (ketPipVal !== undefined && sKetPipCol >= 0) {
+          studentSheet.getRange(foundRowInData, sKetPipCol + 1).setNumberFormat("@").setValue(ketPipVal);
+        }
+        dataSaved = true;
       }
 
-      if (foundRow > 1) {
-        if (desilVal !== undefined) {
-          sheet.getRange(foundRow, desilCol + 1).setNumberFormat("@").setValue(desilVal);
-        }
-        if (ketPipVal !== undefined) {
-          sheet.getRange(foundRow, ketPipCol + 1).setNumberFormat("@").setValue(ketPipVal);
-        }
-        return responseJSON({ status: "success", message: "Data desil berhasil diperbarui", row: foundRow, data: { nisn: targetNisn, desil: desilVal, ket_pip: ketPipVal } });
-      } else {
-        const newRowIdx = sheet.getLastRow() + 1;
-        const colCount = Math.max(nisnCol, desilCol, ketPipCol) + 1;
-        const rRange = sheet.getRange(newRowIdx, 1, 1, colCount);
-        rRange.setNumberFormat("@");
-        const newRow = new Array(colCount).fill("");
-        newRow[nisnCol] = targetNisn;
-        newRow[desilCol] = desilVal !== undefined ? desilVal : "";
-        newRow[ketPipCol] = ketPipVal !== undefined ? ketPipVal : "";
-        rRange.setValues([newRow]);
-        return responseJSON({ status: "success", message: "Data desil baru berhasil ditambahkan", row: newRowIdx, data: { nisn: targetNisn, desil: desilVal, ket_pip: ketPipVal } });
-      }
+      return responseJSON({
+        status: "success",
+        message: dataSaved 
+          ? "Data desil & ket_pip berhasil disimpan langsung ke sheet data (baris " + foundRowInData + ")" 
+          : "Data desil berhasil diproses di sheet data",
+        row: foundRowInData,
+        data: { nisn: targetNisn, desil: desilVal, ket_pip: ketPipVal }
+      });
     }
 
     // 0. TARGET: MUTASI_MASUK

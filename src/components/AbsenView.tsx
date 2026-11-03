@@ -19,6 +19,13 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
+import { StudentStatusFilterControl } from './StudentStatusFilterControl';
+import { 
+  StudentStatusFilterSetting, 
+  getCachedStudentStatusFilterSetting, 
+  fetchStudentStatusFilterFromServer, 
+  filterStudentsByStatusSetting 
+} from '../utils/studentFilter';
 
 interface AbsenViewProps {
   students: Student[];
@@ -70,6 +77,30 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
   // Table Filters & Search (Default 'Semua' agar seluruh data status tampil di awal)
   const [selectedStatus, setSelectedStatus] = useState('Semua');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Pengaturan Filter Status Siswa Akun User/Wali Kelas (dikelola oleh Admin)
+  const [userStatusFilterSetting, setUserStatusFilterSetting] = useState<StudentStatusFilterSetting>(() =>
+    getCachedStudentStatusFilterSetting()
+  );
+
+  React.useEffect(() => {
+    let isMounted = true;
+    fetchStudentStatusFilterFromServer().then((setting) => {
+      if (isMounted) setUserStatusFilterSetting(setting);
+    });
+
+    const handleCustomFilterChange = (e: any) => {
+      if (isMounted && e.detail) {
+        setUserStatusFilterSetting(e.detail);
+      }
+    };
+
+    window.addEventListener('dapodik_student_status_filter_changed', handleCustomFilterChange);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('dapodik_student_status_filter_changed', handleCustomFilterChange);
+    };
+  }, []);
 
   // Available classes across waliKelasList and students
   const availableClasses = useMemo(() => {
@@ -240,12 +271,19 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
 
   // If Admin chose Semua Rombel, consider all students; otherwise filter to target class
   const classStudents = useMemo(() => {
+    let raw: Student[] = [];
     if (isAllRombel) {
-      return students;
+      raw = students;
+    } else {
+      const targetClean = cleanClass(selectedRombel);
+      raw = students.filter((s) => cleanClass(s.kelas) === targetClean);
     }
-    const targetClean = cleanClass(selectedRombel);
-    return students.filter((s) => cleanClass(s.kelas) === targetClean);
-  }, [students, isAllRombel, selectedRombel]);
+
+    if (isUser) {
+      return filterStudentsByStatusSetting(raw, userStatusFilterSetting);
+    }
+    return raw;
+  }, [students, isAllRombel, selectedRombel, isUser, userStatusFilterSetting]);
 
   const hasChanges = classStudents.some((student) => {
     const newStatus = getStudentStatus(student);
@@ -460,10 +498,10 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
   if (!effectiveWali) {
     return (
       <div className="max-w-2xl mx-auto py-8 px-4 space-y-6 animate-fadeIn">
-        {/* Main Access Box */}
-        <div className="bg-white border border-slate-200 rounded-3xl shadow-xl overflow-hidden">
+        {/* Main Access Box - Menggunakan overflow-visible agar dropdown/kontrol tidak terpotong */}
+        <div className="bg-white border border-slate-200 rounded-3xl shadow-xl overflow-visible">
           {/* Header Banner */}
-          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white text-center relative">
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white text-center relative rounded-t-3xl">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-semibold mb-3">
               <Lock className="w-3.5 h-3.5" />
               <span>Akses Verval PD — Mode Administrator</span>
@@ -576,6 +614,24 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
                 )}
               </button>
             </form>
+
+            {/* Box Pengaturan Filter Status Siswa untuk Akun User / Wali Kelas (Khusus Admin) */}
+            <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/80">
+              <div>
+                <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                  Pengaturan Akses Status Siswa (User/Wali Kelas)
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Berlaku untuk tampilan di menu Biodata Siswa dan Verval PD.
+                </p>
+              </div>
+              <StudentStatusFilterControl 
+                isAdmin={true} 
+                variant="segmented"
+                onFilterChange={setUserStatusFilterSetting} 
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -706,6 +762,29 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
                 <option value="Tidak Aktif">Tidak Aktif</option>
               </select>
             </div>
+
+            {/* Pengaturan Status Siswa untuk User / Wali Kelas (Khusus Admin) */}
+            {!isUser && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Akses Status (User):</label>
+                <StudentStatusFilterControl 
+                  isAdmin={true} 
+                  variant="segmented"
+                  onFilterChange={setUserStatusFilterSetting} 
+                />
+              </div>
+            )}
+
+            {/* Indikator Filter Admin untuk Akun User / Wali Kelas */}
+            {isUser && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Filter Admin:</label>
+                <StudentStatusFilterControl 
+                  isAdmin={false} 
+                  variant="compact" 
+                />
+              </div>
+            )}
 
             {/* Save Button */}
             <div>

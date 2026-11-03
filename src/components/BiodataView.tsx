@@ -34,6 +34,13 @@ import {
 import { GTKDownloadHeadersModal } from './GTKDownloadHeadersModal';
 import { DAPODIK_DATA_HEADERS, studentToDapodikRow, dapodikRowToStudent } from '../data/dapodikHeaders';
 import { syncAllStudentsDirectly } from '../services/sheetsSync';
+import { StudentStatusFilterControl } from './StudentStatusFilterControl';
+import { 
+  StudentStatusFilterSetting, 
+  getCachedStudentStatusFilterSetting, 
+  fetchStudentStatusFilterFromServer, 
+  filterStudentsByStatusSetting 
+} from '../utils/studentFilter';
 
 interface BiodataViewProps {
   students: Student[];
@@ -80,6 +87,30 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
   const [selectedJK, setSelectedJK] = useState('Semua');
   const [selectedAgama, setSelectedAgama] = useState('Semua');
   const [selectedStatus, setSelectedStatus] = useState('Semua'); // BARU: Filter Status
+
+  // Pengaturan Filter Status Siswa Akun User/Wali Kelas (dikelola oleh Admin)
+  const [userStatusFilterSetting, setUserStatusFilterSetting] = useState<StudentStatusFilterSetting>(() =>
+    getCachedStudentStatusFilterSetting()
+  );
+
+  React.useEffect(() => {
+    let isMounted = true;
+    fetchStudentStatusFilterFromServer().then((setting) => {
+      if (isMounted) setUserStatusFilterSetting(setting);
+    });
+
+    const handleCustomFilterChange = (e: any) => {
+      if (isMounted && e.detail) {
+        setUserStatusFilterSetting(e.detail);
+      }
+    };
+
+    window.addEventListener('dapodik_student_status_filter_changed', handleCustomFilterChange);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('dapodik_student_status_filter_changed', handleCustomFilterChange);
+    };
+  }, []);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -168,30 +199,38 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
     return Boolean(visibleColumns[colKey as keyof typeof visibleColumns]);
   };
 
+  // Data siswa dasar: Jika akun User / Wali Kelas, terapkan filter sesuai settingan Admin
+  const baseStudents = useMemo(() => {
+    if (isUser) {
+      return filterStudentsByStatusSetting(students, userStatusFilterSetting);
+    }
+    return students;
+  }, [students, isUser, userStatusFilterSetting]);
+
   // Unique lists for dropdown filters with natural alphabetical & numerical sorting
   const uniqueClasses = useMemo(() => {
-    const classList = students.map((s) => s.kelas).filter((k): k is string => Boolean(k));
+    const classList = baseStudents.map((s) => s.kelas).filter((k): k is string => Boolean(k));
     const set = new Set<string>(classList);
     const sorted = Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
     return ['Semua', ...sorted];
-  }, [students]);
+  }, [baseStudents]);
 
   const uniqueAgama = useMemo(() => {
-    const agamaList = students.map((s) => s.agama).filter((a): a is string => Boolean(a));
+    const agamaList = baseStudents.map((s) => s.agama).filter((a): a is string => Boolean(a));
     const set = new Set<string>(agamaList);
     return ['Semua', ...Array.from(set).sort()];
-  }, [students]);
+  }, [baseStudents]);
 
   // BARU: Unique Status list
   const uniqueStatus = useMemo(() => {
-    const statusList = students.map((s) => s.status || 'Aktif').filter((s): s is string => Boolean(s));
+    const statusList = baseStudents.map((s) => s.status || 'Aktif').filter((s): s is string => Boolean(s));
     const set = new Set<string>(statusList);
     return ['Semua', ...Array.from(set).sort()];
-  }, [students]);
+  }, [baseStudents]);
 
   // Filter students based on search and filters
   const filteredStudents = useMemo(() => {
-    return students.filter((student) => {
+    return baseStudents.filter((student) => {
       // Search query match
       const query = searchQuery.toLowerCase().trim();
       const matchQuery =
@@ -220,7 +259,7 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
 
       return matchQuery && matchKelas && matchJK && matchAgama && matchStatus;
     });
-  }, [students, searchQuery, selectedKelas, selectedJK, selectedAgama, selectedStatus]);
+  }, [baseStudents, searchQuery, selectedKelas, selectedJK, selectedAgama, selectedStatus]);
 
   // Pagination calculations
   const totalItems = filteredStudents.length;
@@ -694,6 +733,15 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
                   <span>Kolom</span>
                 </button>
               )}
+
+              {/* Pengaturan Status Siswa Akun User/Wali Kelas (Khusus Admin) */}
+              {!isUser && (
+                <StudentStatusFilterControl 
+                  isAdmin={true} 
+                  variant="segmented"
+                  onFilterChange={setUserStatusFilterSetting} 
+                />
+              )}
             </div>
           </div>
 
@@ -798,8 +846,21 @@ export const BiodataView: React.FC<BiodataViewProps> = ({
               </button>
             )}
 
+            {/* Indikator Filter Admin untuk Akun User */}
+            {isUser && (
+              <StudentStatusFilterControl 
+                isAdmin={false} 
+                variant="compact" 
+              />
+            )}
+
             <div className="ml-auto text-slate-500">
-              Menampilkan <strong className="text-slate-900">{filteredStudents.length}</strong> dari {students.length} siswa
+              Menampilkan <strong className="text-slate-900">{filteredStudents.length}</strong> dari {baseStudents.length} siswa
+              {isUser && baseStudents.length !== students.length && (
+                <span className="text-[11px] text-slate-400 ml-1">
+                  (Total Sekolah: {students.length})
+                </span>
+              )}
             </div>
           </div>
 
