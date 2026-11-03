@@ -39,6 +39,7 @@ interface PIPViewProps {
   appConfig: AppConfig;
   currentUser?: GTKData | null;
   waliKelasList?: WaliKelas[];
+  onRefreshStudents?: () => Promise<void>;
 }
 
 // Opsi Target Sasaran Tingkat Kelas (bisa memilih lebih dari 1)
@@ -91,7 +92,8 @@ export const PIPView: React.FC<PIPViewProps> = ({
   students, 
   appConfig, 
   currentUser,
-  waliKelasList = []
+  waliKelasList = [],
+  onRefreshStudents
 }) => {
   const isAdmin = !currentUser || !isUserRole(currentUser) || isAdminRole(currentUser);
 
@@ -945,6 +947,7 @@ export const PIPView: React.FC<PIPViewProps> = ({
           showToast={showToast}
           isDesilAktif={isDesilAktif}
           onToggleDesilAktif={handleToggleDesilAktif}
+          onRefreshStudents={onRefreshStudents}
         />
       ) : (
         <>
