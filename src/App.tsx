@@ -820,6 +820,7 @@ export default function App() {
               appConfig={appConfig}
               currentUser={currentUser}
               waliKelasList={waliKelasList}
+              onRefreshStudents={() => fetchStudentsData(true)}
             />
           )}
 
