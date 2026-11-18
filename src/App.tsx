@@ -664,9 +664,9 @@ export default function App() {
     }
   };
 
-  // If not logged in with GTK NIP, show Login page
+  // If not logged in with GTK account, show Login page
   if (!currentUser) {
-    return <LoginView gtkList={gtkList} onLogin={handleLogin} />;
+    return <LoginView gtkList={gtkList} appConfig={appConfig} onLogin={handleLogin} />;
   }
 
   return (
