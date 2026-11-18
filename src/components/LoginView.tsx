@@ -285,7 +285,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ gtkList, appConfig, onLogi
           <div className="px-6 py-5 sm:px-7 sm:py-5 space-y-3.5">
             <div className="text-center">
               <h2 className="text-sm font-bold text-slate-800">
-                Masuk ke Aplikasi
+                Masuk Menggunakan Akun Dapodik
               </h2>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Gunakan Email GTK dan Password yang terdaftar
