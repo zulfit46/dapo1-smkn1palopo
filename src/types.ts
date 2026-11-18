@@ -227,6 +227,7 @@ export interface GTKData {
   telepon?: string;
   hp?: string;
   email?: string;
+  password?: string;
   skCpns?: string;
   tanggalCpns?: string;
   skPengangkatan?: string;
