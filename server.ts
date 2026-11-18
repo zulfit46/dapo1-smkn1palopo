@@ -917,6 +917,11 @@ async function fetchGTKFromGoogleSheets(forceRefresh = false): Promise<GTKData[]
                   if (hClean === 'telepon') obj.telepon = strVal;
                   if (hClean === 'hp' || hClean === 'nohp') obj.hp = strVal;
                   if (hClean === 'email') obj.email = strVal;
+                  if (hClean === 'password' || hClean === 'pasword' || hClean === 'katasandi' || hClean === 'sandi') {
+                    obj.password = (cell && cell.f !== undefined && cell.f !== null && String(cell.f).trim() !== '')
+                      ? String(cell.f).trim()
+                      : strVal;
+                  }
                   if (hClean === 'skcpns') obj.skCpns = strVal;
                   if (hClean === 'tanggalcpns') obj.tanggalCpns = strVal;
                   if (hClean === 'skpengangkatan') obj.skPengangkatan = strVal;
