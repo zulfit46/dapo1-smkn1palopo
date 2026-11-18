@@ -96,7 +96,7 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
     statusKepegawaian: true,
     jenisPtk: true,
     jenjang: true,
-    tugasTambahan: true,
+    email: true,
     jabatanPtk: true,
     agama: true,
     alamatJalan: true,
@@ -117,7 +117,7 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
       case 'statusKepegawaian': return 'Status Kepegawaian';
       case 'jenisPtk': return 'Jenis PTK';
       case 'jenjang': return 'Jenjang';
-      case 'tugasTambahan': return 'Tugas Tambahan';
+      case 'email': return 'Email';
       case 'jabatanPtk': return 'Jabatan PTK';
       case 'agama': return 'Agama';
       case 'alamatJalan': return 'Alamat Jalan';
@@ -164,7 +164,7 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
         (gtk.alamatJalan || '').toLowerCase().includes(q) ||
         (gtk.tempatLahir || '').toLowerCase().includes(q) ||
         (gtk.jenjang || '').toLowerCase().includes(q) ||
-        (gtk.tugasTambahan || '').toLowerCase().includes(q) ||
+        (gtk.email || '').toLowerCase().includes(q) ||
         (gtk.jabatanPtk || gtk.jabatan_ptk || '').toLowerCase().includes(q);
 
       const matchStatus =
@@ -277,14 +277,14 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
       g.statusKepegawaian || '-',
       g.jenisPtk || '-',
       g.jenjang || '-',
-      g.tugasTambahan || '-',
+      g.email || '-',
       g.jabatanPtk || g.jabatan_ptk || '-',
       g.hp || '-'
     ]);
 
     autoTable(doc, {
       startY: 47,
-      head: [['No', 'Nama Lengkap', 'NUPTK', 'JK', 'NIP', 'Status', 'Jenis PTK', 'Jenjang', 'Tugas Tambahan', 'Jabatan PTK', 'No HP']],
+      head: [['No', 'Nama Lengkap', 'NUPTK', 'JK', 'NIP', 'Status', 'Jenis PTK', 'Jenjang', 'Email', 'Jabatan PTK', 'No HP']],
       body: tableBody,
       theme: 'grid',
       headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
@@ -618,7 +618,7 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
                 {visibleColumns.statusKepegawaian && <th className="py-2.5 px-3 min-w-[140px] border-r border-slate-300">Status</th>}
                 {visibleColumns.jenisPtk && <th className="py-2.5 px-3 min-w-[150px] border-r border-slate-300">Jenis PTK</th>}
                 {visibleColumns.jenjang && <th className="py-2.5 px-3 min-w-[100px] border-r border-slate-300">Jenjang</th>}
-                {visibleColumns.tugasTambahan && <th className="py-2.5 px-3 min-w-[160px] border-r border-slate-300">Tugas Tambahan</th>}
+                {visibleColumns.email && <th className="py-2.5 px-3 min-w-[180px] border-r border-slate-300">Email</th>}
                 {visibleColumns.jabatanPtk && <th className="py-2.5 px-3 min-w-[160px] border-r border-slate-300">Jabatan PTK</th>}
                 {visibleColumns.agama && <th className="py-2.5 px-3 min-w-[90px] border-r border-slate-300">Agama</th>}
                 {visibleColumns.alamatJalan && <th className="py-2.5 px-4 min-w-[200px] border-r border-slate-300">Alamat</th>}
@@ -707,9 +707,9 @@ export const GTKBiodataView: React.FC<GTKBiodataViewProps> = ({
                         </td>
                       )}
 
-                      {visibleColumns.tugasTambahan && (
+                      {visibleColumns.email && (
                         <td className="py-2.5 px-3 font-medium text-slate-800 border-r border-slate-200">
-                          {gtk.tugasTambahan || '-'}
+                          {gtk.email || '-'}
                         </td>
                       )}
 
