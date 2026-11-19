@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActiveTab, GTKData, AppTheme } from '../types';
-import { Menu, RefreshCw, FileCode, Palette } from 'lucide-react';
+import { Menu, RefreshCw, FileCode } from 'lucide-react';
 import { isUserRole } from '../utils/authUtils';
 
 interface HeaderProps {
@@ -13,7 +13,6 @@ interface HeaderProps {
   currentUser?: GTKData | null;
   onLogout?: () => void;
   theme?: AppTheme;
-  onToggleTheme?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,9 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCodeGsModal,
   onRefreshData,
   isRefreshing,
-  currentUser,
-  theme = 'aurora-glass',
-  onToggleTheme
+  currentUser
 }) => {
   const getTabTitle = () => {
     switch (activeTab) {
@@ -76,14 +73,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   const { title } = getTabTitle();
   const isUser = isUserRole(currentUser);
-  const isGlassTheme = theme === 'aurora-glass';
 
   return (
-    <header className={`sticky top-0 z-30 px-4 lg:px-8 py-3.5 flex items-center justify-between transition-colors duration-300 ${
-      isGlassTheme 
-        ? 'bg-white/70 backdrop-blur-xl border-b border-white/50 shadow-xs' 
-        : 'bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-2xs'
-    }`}>
+    <header className="sticky top-0 z-30 px-4 lg:px-8 py-3.5 flex items-center justify-between bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-2xs">
       <div className="flex items-center gap-3">
         <button
           onClick={onToggleMobileMenu}
@@ -101,24 +93,6 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Toggle Theme Button (Tampil clean hanya nama tema) */}
-        {onToggleTheme && (
-          <button
-            onClick={onToggleTheme}
-            id="btn-toggle-theme"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-xs border ${
-              isGlassTheme
-                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-700 hover:to-indigo-700 text-white border-purple-400/50 shadow-purple-500/25'
-                : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-800 shadow-xs'
-            }`}
-            title={isGlassTheme ? 'Beralih ke Tema Klasik' : 'Beralih ke Tema Glassmorphic'}
-          >
-            <Palette className={`w-3.5 h-3.5 shrink-0 ${isGlassTheme ? 'text-amber-300 animate-pulse' : 'text-indigo-600'}`} />
-            <span className="whitespace-nowrap">
-              {isGlassTheme ? 'Glassmorphic' : 'Klasik'}
-            </span>
-          </button>
-        )}
 
         {/* Script code.gs Button - Disembunyikan jika login sebagai user */}
         {!isUser && (
