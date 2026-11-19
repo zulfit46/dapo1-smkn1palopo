@@ -77,13 +77,12 @@ export const GTKTugasTambahanView: React.FC<GTKTugasTambahanViewProps> = ({
   gtkList = [],
   waliKelasList = [],
   currentUser,
-  theme = 'aurora-glass',
   appConfig,
   onRefresh,
   isRefreshing = false,
   onImportGTK
 }) => {
-  const isGlass = theme === 'aurora-glass';
+  const isGlass = false;
   const isUser = isUserRole(currentUser);
   const isAdmin = !currentUser || isAdminRole(currentUser);
 
