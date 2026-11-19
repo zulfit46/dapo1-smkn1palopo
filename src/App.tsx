@@ -776,6 +776,16 @@ export default function App() {
               appConfig={appConfig}
               onAuthenticateWali={handleSetAuthenticatedWali}
               onSaveVerval={handleSaveVerval}
+              onAddStudentToActive={(newStudent) => {
+                const vervalUser = newStudent.verval_oleh || currentUser?.nama || (currentUser as any)?.nama_lengkap || currentUser?.id || 'Admin';
+                const studentWithVerval = {
+                  ...newStudent,
+                  verval_oleh: vervalUser,
+                  vervalOleh: vervalUser
+                };
+                setStudents(prev => [studentWithVerval, ...prev]);
+                safeSetItem('dapodik_cached_students', [studentWithVerval, ...students]);
+              }}
               onNavigateTab={(tab) => setActiveTab(tab)}
             />
           )}
