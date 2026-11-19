@@ -65,10 +65,9 @@ export function parseGradeLevel(rawClass: string = ''): '10' | '11' | '12' | 'La
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   students,
-  onNavigateTab,
-  theme = 'aurora-glass'
+  onNavigateTab
 }) => {
-  const isGlass = theme === 'aurora-glass';
+  const isGlass = false;
 
   // Selaras dengan Rekapitulasi: Hanya menghitung peserta didik yang berstatus Aktif
   // Siswa mutasi keluar / mengundurkan diri (Tidak Aktif) otomatis berkurang dari dashboard
