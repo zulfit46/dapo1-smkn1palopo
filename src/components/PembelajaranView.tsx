@@ -46,7 +46,6 @@ export const PembelajaranView: React.FC<PembelajaranViewProps> = ({
   gtkList = [],
   waliKelasList = [],
   currentUser,
-  theme = 'aurora-glass',
   appConfig,
   onRefresh,
   isRefreshing = false,
@@ -54,7 +53,7 @@ export const PembelajaranView: React.FC<PembelajaranViewProps> = ({
 }) => {
   const isUser = isUserRole(currentUser);
   const isAdmin = !currentUser || isAdminRole(currentUser);
-  const isGlass = theme === 'aurora-glass';
+  const isGlass = false;
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Resolve logged-in GTK's name in Pembelajaran data
