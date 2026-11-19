@@ -28,12 +28,11 @@ export const JurusanView: React.FC<JurusanViewProps> = ({
   jurusanList = [],
   onUpdateJurusan,
   appConfig,
-  currentUser,
-  theme
+  currentUser
 }) => {
   const isUser = isUserRole(currentUser);
   const isAdmin = !isUser;
-  const isGlass = theme === 'aurora-glass';
+  const isGlass = false;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
