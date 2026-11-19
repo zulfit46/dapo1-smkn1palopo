@@ -112,13 +112,12 @@ export const AksesMenuView: React.FC<AksesMenuViewProps> = ({
   currentUser,
   waliKelasList = [],
   appConfig,
-  theme = 'aurora-glass',
   onUpdateGTK,
   onBatchUpdateGTK,
   onRefresh,
   isRefreshing = false
 }) => {
-  const isGlass = theme === 'aurora-glass';
+  const isGlass = false;
   const isAdmin = !isUserRole(currentUser);
 
   // Search & Filter State
