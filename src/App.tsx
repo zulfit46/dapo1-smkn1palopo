@@ -203,17 +203,7 @@ export default function App() {
   }, [currentUser, appConfig.webAppUrl]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [theme, setTheme] = useState<AppTheme>(() => {
-    return safeGetItem<AppTheme>('dapodik_app_theme', 'aurora-glass');
-  });
-
-  const handleToggleTheme = () => {
-    setTheme((prev) => {
-      const next = prev === 'aurora-glass' ? 'classic' : 'aurora-glass';
-      safeSetItem('dapodik_app_theme', next);
-      return next;
-    });
-  };
+  const theme: AppTheme = 'classic';
   
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCodeGsModalOpen, setIsCodeGsModalOpen] = useState(false);
@@ -670,11 +660,7 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen font-sans flex flex-col lg:flex-row antialiased transition-colors duration-300 ${
-      theme === 'aurora-glass'
-        ? 'bg-gradient-to-br from-slate-100 via-purple-50/30 to-blue-50/20 text-slate-900'
-        : 'bg-slate-100 text-slate-900'
-    }`}>
+    <div className="min-h-screen font-sans flex flex-col lg:flex-row antialiased bg-slate-100 text-slate-900">
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
@@ -688,7 +674,6 @@ export default function App() {
         waliKelasList={waliKelasList}
         onLogout={handleLogout}
         theme={theme}
-        onToggleTheme={handleToggleTheme}
       />
 
       {/* Main Content Area */}
@@ -703,7 +688,6 @@ export default function App() {
           currentUser={currentUser}
           onLogout={handleLogout}
           theme={theme}
-          onToggleTheme={handleToggleTheme}
         />
 
         <main className="flex-1 p-4 lg:p-8 w-full mx-auto space-y-6">
