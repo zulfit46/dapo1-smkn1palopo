@@ -23,7 +23,6 @@ import {
   Banknote,
   LogOut,
   User,
-  Palette,
   KeyRound,
   ArrowLeftRight,
   BookOpen,
@@ -44,7 +43,6 @@ interface SidebarProps {
   waliKelasList?: WaliKelas[];
   onLogout?: () => void;
   theme?: AppTheme;
-  onToggleTheme?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -57,9 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isGoogleSheetsConnected,
   currentUser,
   waliKelasList = [],
-  onLogout,
-  theme = 'aurora-glass',
-  onToggleTheme
+  onLogout
 }) => {
   // Accordion state: hanya satu grup menu yang terbuka pada satu waktu
   const [openMenu, setOpenMenu] = useState<'gtk' | 'peserta-didik' | 'rekap' | null>(() => {
@@ -70,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
   const [logoError, setLogoError] = useState(false);
 
-  const isGlass = theme === 'aurora-glass';
+  const isGlass = false;
 
   // Fungsi toggle menu dengan sistem accordion (jika satu dibuka, yang lain otomatis menutup)
   const toggleMenu = (menu: 'gtk' | 'peserta-didik' | 'rekap') => {
@@ -806,40 +802,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 </button>
               )} */}
-            </div>
-          )}
-
-          {/* Theme Switcher Button in Sidebar Navigation */}
-          {onToggleTheme && (
-            <div className="pt-2 pb-1">
-              <p className={`px-3 text-[10px] font-bold uppercase tracking-wider mb-2 ${
-                isGlass ? 'text-purple-300/60' : 'text-slate-500'
-              }`}>
-                Tampilan & Tema
-              </p>
-              <button
-                onClick={onToggleTheme}
-                id="sidebar-btn-toggle-theme"
-                className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-xs cursor-pointer shadow-xs ${
-                  isGlass
-                    ? 'bg-purple-900/50 hover:bg-purple-800/60 border-purple-400/40 text-white'
-                    : 'bg-slate-800 hover:bg-slate-700/80 border-slate-700 text-slate-200'
-                }`}
-                title={isGlass ? 'Beralih ke Tema Klasik' : 'Beralih ke Tema Glassmorphic'}
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className={`p-1.5 rounded-lg ${
-                    isGlass ? 'bg-purple-600/40 text-amber-300' : 'bg-slate-700 text-indigo-400'
-                  }`}>
-                    <Palette className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="text-left">
-                    <span className="font-bold block text-white text-xs">
-                      {isGlass ? 'Glassmorphic' : 'Klasik'}
-                    </span>
-                  </div>
-                </div>
-              </button>
             </div>
           )}
         </nav>
