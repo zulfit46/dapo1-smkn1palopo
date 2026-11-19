@@ -50,12 +50,11 @@ interface GTKGajiViewProps {
 export const GTKGajiView: React.FC<GTKGajiViewProps> = ({
   gtkList = INITIAL_GTK_LIST,
   appConfig,
-  currentUser,
-  theme
+  currentUser
 }) => {
   const isUser = isUserRole(currentUser);
   const isAdmin = !isUser;
-  const isGlass = theme === 'aurora-glass';
+  const isGlass = false;
 
   // Helper pemeriksa apakah suatu objek adalah data siswa (bukan GTK / Gaji)
   const isStudentLeak = useCallback((item: any): boolean => {
