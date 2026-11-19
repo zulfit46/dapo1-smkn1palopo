@@ -471,5 +471,5 @@ export type ActiveTab =
   | 'rekap-pd' 
   | 'rekap-gtk';
 
-export type AppTheme = 'aurora-glass' | 'classic';
+export type AppTheme = 'classic';
 
