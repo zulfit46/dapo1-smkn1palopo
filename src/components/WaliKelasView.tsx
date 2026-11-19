@@ -29,12 +29,11 @@ export const WaliKelasView: React.FC<WaliKelasViewProps> = ({
   waliKelasList = [],
   onUpdateWaliKelas,
   appConfig,
-  currentUser,
-  theme
+  currentUser
 }) => {
   const isUser = isUserRole(currentUser);
   const isAdmin = !isUser;
-  const isGlass = theme === 'aurora-glass';
+  const isGlass = false;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
