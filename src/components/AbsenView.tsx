@@ -1,9 +1,14 @@
 import React, { useState, useMemo } from 'react';
-import { Student, WaliKelas, GTKData, ActiveTab, AppConfig } from '../types';
+import { Student, WaliKelas, GTKData, ActiveTab, AppConfig, MutasiMasukItem } from '../types';
 import { isUserRole, getWaliKelasForUser } from '../utils/authUtils';
 import { notifyVervalPD, VervalPDItemNotification } from '../services/telegramService';
+import { safeGetItem, safeSetItem } from '../utils/storage';
+import { fetchMutasiMasukDirectly } from '../services/sheetsSync';
+import { TambahSiswaMutasiModal } from './TambahSiswaMutasiModal';
 import { 
   UserCheck, 
+  UserPlus,
+  Clock,
   Save, 
   Search, 
   CheckCircle, 
@@ -46,6 +51,7 @@ interface AbsenViewProps {
     vervalOleh?: string;
     verval_oleh?: string;
   }[]) => Promise<any> | any;
+  onAddStudentToActive?: (student: Student) => void;
   onNavigateTab?: (tab: ActiveTab) => void;
 }
 
@@ -60,6 +66,7 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
   appConfig,
   onAuthenticateWali,
   onSaveVerval,
+  onAddStudentToActive,
   onNavigateTab
 }) => {
   const isUser = isUserRole(currentUser);
@@ -101,6 +108,29 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
       window.removeEventListener('dapodik_student_status_filter_changed', handleCustomFilterChange);
     };
   }, []);
+
+  // State untuk Modal Tambah Siswa (Mutasi Masuk) & daftar usulan pending
+  const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
+  const [mutasiMasukList, setMutasiMasukList] = useState<MutasiMasukItem[]>(() =>
+    safeGetItem<MutasiMasukItem[]>('dapodik_cached_mutasi_masuk', [])
+  );
+
+  React.useEffect(() => {
+    let isMounted = true;
+    if (appConfig?.webAppUrl || appConfig?.spreadsheetId) {
+      fetchMutasiMasukDirectly(appConfig)
+        .then((remote) => {
+          if (isMounted && Array.isArray(remote) && remote.length > 0) {
+            setMutasiMasukList(remote);
+            safeSetItem('dapodik_cached_mutasi_masuk', remote);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [appConfig?.webAppUrl, appConfig?.spreadsheetId]);
 
   // Available classes across waliKelasList and students
   const availableClasses = useMemo(() => {
@@ -775,16 +805,23 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
               </div>
             )}
 
-            {/* Indikator Filter Admin untuk Akun User / Wali Kelas */}
-            {isUser && (
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Filter Admin:</label>
-                <StudentStatusFilterControl 
-                  isAdmin={false} 
-                  variant="compact" 
-                />
-              </div>
-            )}
+            {/* Tambah Siswa Button (Mutasi Masuk) */}
+            <div>
+              <label className="block text-[10px] font-bold text-transparent select-none mb-0.5">Tambah:</label>
+              <button
+                type="button"
+                onClick={() => setIsAddStudentModalOpen(true)}
+                title={
+                  isUser
+                    ? `Ajukan penambahan siswa baru ke kelas ${effectiveWali?.kelas || selectedRombel}`
+                    : 'Tambah siswa baru / mutasi masuk ke rombel'
+                }
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all whitespace-nowrap cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Tambah Siswa</span>
+              </button>
+            </div>
 
             {/* Save Button */}
             <div>
@@ -830,6 +867,37 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
             <span>Tidak ada perubahan status atau keterangan siswa yang perlu disimpan. Silakan ubah status/keterangan siswa terlebih dahulu.</span>
           </div>
         )}
+
+        {(() => {
+          const pendingForClass = mutasiMasukList.filter((m) => {
+            if (m.status !== 'Pending') return false;
+            if (!isUser && selectedRombel === 'Semua Rombel') return true;
+            return cleanClass(m.rombelTujuan) === cleanClass(selectedRombel);
+          });
+          if (pendingForClass.length === 0) return null;
+          return (
+            <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-amber-900 text-xs flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">
+                    {pendingForClass.length} usulan siswa baru menunggu persetujuan Admin (Mutasi Masuk):{' '}
+                  </span>
+                  <span className="text-amber-800">
+                    {pendingForClass
+                      .slice(0, 3)
+                      .map((p) => `${p.nama} (${p.nisn})`)
+                      .join(', ')}
+                    {pendingForClass.length > 3 ? ` +${pendingForClass.length - 3} lainnya` : ''}
+                  </span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold uppercase tracking-wide">
+                Status Pending
+              </span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Verval PD Table - Clean Grid Style */}
@@ -992,6 +1060,35 @@ export const AbsenView: React.FC<AbsenViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal Tambah Siswa (Form Mutasi Masuk dengan Rombel Tujuan Otomatis) */}
+      <TambahSiswaMutasiModal
+        isOpen={isAddStudentModalOpen}
+        onClose={() => setIsAddStudentModalOpen(false)}
+        defaultRombel={isUser ? (effectiveWali?.kelas || selectedRombel) : (isAllRombel ? '' : selectedRombel)}
+        lockRombel={isUser}
+        availableRombelList={availableClasses}
+        students={students}
+        existingMutasiMasuk={mutasiMasukList}
+        isAdmin={!isUser}
+        currentUserName={
+          currentUser?.nama ||
+          (currentUser as any)?.nama_lengkap ||
+          effectiveWali?.nama ||
+          'Wali Kelas'
+        }
+        appConfig={appConfig}
+        onAddStudentToActive={onAddStudentToActive}
+        onSuccess={(item) => {
+          setMutasiMasukList((prev) => [item, ...prev]);
+          setSavedSuccessMessage(
+            item.status === 'Diterima'
+              ? `Siswa "${item.nama}" (${item.nisn}) berhasil ditambahkan ke kelas ${item.rombelTujuan} dan otomatis berstatus Aktif.`
+              : `Usulan siswa "${item.nama}" (${item.nisn}) untuk kelas ${item.rombelTujuan} berhasil disimpan (Status: Pending, menunggu persetujuan Admin).`
+          );
+          setTimeout(() => setSavedSuccessMessage(null), 6000);
+        }}
+      />
     </div>
   );
 };
